@@ -19,6 +19,7 @@ export function next(st, key, vm, cols = 4) {
     return { state: s, effect: null };
   }
   if (key === "escape" || key === "Escape") return { state: s, effect: { close: true } };
+  if (key === "t") return { state: s, effect: { theme: "toggle" } };
   if (key === "tab" || key === "Tab") { s.zone = s.zone === "lane" ? "cards" : vm.lane.length ? "lane" : "cards"; return { state: s, effect: null }; }
   if (/^[1-9]$/.test(key) && +key <= n) { s.zone = "cards"; s.card = +key - 1; return { state: s, effect: null }; }
   if (s.zone === "lane") {
@@ -38,11 +39,20 @@ export function next(st, key, vm, cols = 4) {
   return { state: s, effect: null };
 }
 
-// Canvas keys: (cst, key, layout) -> { state, effect }. cst = { sel, drawer }.
-// Effects: { open: "agent", pane } | { back: true } (to the stage).
-import { nearest } from "./canvas.js";
-export function nextCanvas(cst, key, layout) {
+// Canvas keys: (cst, key, layout, view) -> { state, effect }. cst = { sel, drawer, zoom?, zoomSet? };
+// view = { vw, vh } (the canvas viewport, for the fit zoom). zoomSet false means "fit": + and - start from it.
+// Effects: { open: "agent", pane } | { back: true } (to the stage) | { theme: "toggle" }.
+import { nearest, fitZoom, clampZoom, ZOOM } from "./canvas.js";
+// view.fit, when given, is the fit zoom the host is showing (it may draw a smaller layout than it navigates).
+export const zoomOf = (cst, layout, view) => (cst.zoomSet ? cst.zoom : view?.fit ?? fitZoom(layout, view?.vw ?? 1600, view?.vh ?? 1000));
+export function nextCanvas(cst, key, layout, view) {
   const s = { ...cst }, dir = DIR[key];
+  if (key === "t") return { state: s, effect: { theme: "toggle" } };
+  if (key === "+" || key === "=" || key === "-") {
+    s.zoom = clampZoom(zoomOf(cst, layout, view) + (key === "-" ? -ZOOM.step : ZOOM.step)); s.zoomSet = true;
+    return { state: s, effect: null };
+  }
+  if (key === "0") { s.zoomSet = false; return { state: s, effect: null }; }
   if (dir) { s.sel = nearest(layout, s.sel, dir); return { state: s, effect: null }; }
   if (key === "escape" || key === "Escape") { if (s.drawer) { s.drawer = false; return { state: s, effect: null }; } return { state: s, effect: { back: true } }; }
   if (key === "space" || key === " ") { s.drawer = !s.drawer; return { state: s, effect: null }; }

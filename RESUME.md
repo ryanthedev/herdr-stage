@@ -1,6 +1,6 @@
 # Resume point (update this before handing off)
 
-**Updated:** 2026-11-08, canvas level v1 done (session ~/.config, Claude Code).
+**Updated:** 2026-11-08, #220 done: neon noir theme + canvas zoom (session in ~/repos/herdr-stage).
 
 ## Done
 - Summary-on-idle: core/summary.js, adapters/node.js, bin/summary-job.mjs (NOT running in background:
@@ -13,14 +13,25 @@
 core/canvas.js (layout, elbow edge segments, spatial nearest, camera), nextCanvas in core/nav.js; the mod's
 Enter on a stage card opens the canvas, Esc returns. Helpers come from terminals() (parent) and open with
 agent.focus. Recap drawer (Space) shows the summary and the last message. Screens: docs/native-*-v1.png.
-Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer"}) opens a canvas without keys.
+Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","theme","zoom"}) opens a canvas without keys.
+
+## Done: #220 neon noir + canvas zoom (native)
+- Theme: mod/themes.js holds every colour/font as tokens ("default" follows the Herdr theme, "noir" is the POC
+  palette). `t` toggles at both levels (core nav effect {theme:"toggle"}); saved in shared("stage.theme").
+  Default stays the default until the user picks noir. Noir stand-ins for glow/tracking: caps in Avenir Next
+  Condensed, weight 700, cyan focus border + shadow_lg on the selection, pink your-move borders.
+- Zoom: core/canvas.js scaleLayout/fitZoom/clampZoom/detailAt (ZOOM 0.35-2, step 0.15, auto-fit floor 0.6);
+  keys `+`/`=` `-` `0` (fit) in nextCanvas; clickable − % + fit bar bottom left. Semantic zoom: below 0.55
+  cards show name (+ ask), below 0.8 name + meta, else full; layoutCanvas(space, detail) sizes cards to match.
+  The skin draws/navigates the detail layout; fit zoom comes from the full one (view.fit).
+- Seam now also takes "theme" and "zoom". Screens: docs/native-*-noir*.png. 28 tests.
 
 ## Next
-- Neon noir theme natively (tokens only; no letter-spacing or glow in GPUI: use weight and tinted bands).
-- Zoom on the canvas (GPUI has no transform scale: scale node sizes and positions instead).
-- Card heights are estimates (agentH); if text clips, raise them or measure with on_size_change.
-- Summary job in the background once the user's usage governor allows (user's call).
-- The user's main Herdr needs a restart before cmd-g shows any of this.
+- Card heights are still estimates (agentH); if text clips, raise them or measure with on_size_change.
+- Zoom has no mouse wheel / pinch yet (keyboard and the zoom bar only).
+- Summary job in the background once the user's usage governor allows (user's call, still paused).
+- The user's main Herdr needs a restart before cmd-g shows any of this, and an install to
+  ~/.config/herdr-app/mods/stage (./scripts/install.sh) — not done: the user's window is theirs.
 
 ## How to test natively without touching the user's Herdr
 1. `rsync -a --exclude telemetry --exclude '*.bak*' --exclude shared.json --exclude window.json

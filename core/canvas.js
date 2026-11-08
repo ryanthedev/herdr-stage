@@ -5,10 +5,12 @@ import { agentRow } from "./stage.js";
 export const SIZE = { rootW: 320, tabW: 90, agentW: 440, colGap: 60, rowGap: 24, groupGap: 44 };
 
 // Agent card height from what it shows: title + meta, then a status line, then a your-move box.
-export const agentH = (r) => 96 + (r.line ? 56 : 0) + (r.move ? 80 : 0);
+// detail (see detailAt) drops lines when zoomed out, so the card shrinks with it instead of standing half empty.
+export const agentH = (r, detail = "full") =>
+  detail === "name" ? 64 + (r.move ? 80 : 0) : detail === "brief" ? 84 + (r.move ? 80 : 0) : 96 + (r.line ? 56 : 0) + (r.move ? 80 : 0);
 
-// space: { id, name, folder, git, agents: [{ addr, parent?, tab, ... }] } -> { nodes, edges, bbox }
-export function layoutCanvas(space) {
+// space: { id, name, folder, git, agents: [{ addr, parent?, tab, ... }] }, detail -> { nodes, edges, bbox }
+export function layoutCanvas(space, detail = "full") {
   const S = SIZE, rows = space.agents.map((a) => ({ ...agentRow(a), tab: a.tab, parent: a.parent ?? null }));
   const nodes = [], edges = [];
   const root = { id: "root", kind: "root", x: 0, y: 0, w: S.rootW, h: 110 };
@@ -20,11 +22,11 @@ export function layoutCanvas(space) {
     const top = y, tn = { id: `tab:${t}`, kind: "tab", label: /^\d+$/.test(String(t)) ? `tab ${t}` : String(t), x: xTab, y: 0, w: S.tabW, h: 36 };
     nodes.push(tn); edges.push([root.id, tn.id]);
     for (const r of rows.filter((r) => r.tab === t && !r.parent)) {
-      const an = { id: r.addr, kind: "agent", row: r, x: xAgent, y, w: S.agentW, h: agentH(r) };
+      const an = { id: r.addr, kind: "agent", row: r, x: xAgent, y, w: S.agentW, h: agentH(r, detail) };
       nodes.push(an); edges.push([tn.id, an.id]);
       let ky = y;
       for (const k of rows.filter((k) => k.parent === r.addr)) {
-        const kn = { id: k.addr, kind: "agent", row: k, x: xHelper, y: ky, w: S.agentW, h: agentH(k) };
+        const kn = { id: k.addr, kind: "agent", row: k, x: xHelper, y: ky, w: S.agentW, h: agentH(k, detail) };
         nodes.push(kn); edges.push([an.id, kn.id]); ky += kn.h + S.rowGap;
       }
       y = Math.max(y + an.h + S.rowGap, ky) ;
@@ -81,3 +83,28 @@ export function camera(layout, selId, vw, vh, pad = 48) {
 
 export const firstAgent = (layout, preferMove = true) =>
   (preferMove && layout.nodes.find((n) => n.kind === "agent" && n.row.move)) || layout.nodes.find((n) => n.kind === "agent");
+
+// Zoom. GPUI has no transform scale, so a skin draws a scaled copy of the layout (positions and sizes times z)
+// and scales its own px by the same z. Range and step match the POC.
+export const ZOOM = { min: 0.35, max: 2, step: 0.15, autoMin: 0.6 };
+
+export function scaleLayout(layout, z) {
+  const nodes = layout.nodes.map((n) => ({ ...n, x: n.x * z, y: n.y * z, w: n.w * z, h: n.h * z }));
+  const b = layout.bbox;
+  return { nodes, edges: layout.edges, bbox: { x0: b.x0 * z, y0: b.y0 * z, x1: b.x1 * z, y1: b.y1 * z },
+    byId: Object.fromEntries(nodes.map((n) => [n.id, n])), z };
+}
+
+// The zoom that frames the whole tree, never above 1 (a small tree stays at its natural size) and never
+// below autoMin (past that text is unreadable: the camera follows the selection instead).
+export function fitZoom(layout, vw, vh, pad = 48) {
+  const { x0, y0, x1, y1 } = layout.bbox;
+  const z = Math.min((vw - 2 * pad) / Math.max(1, x1 - x0), (vh - 2 * pad) / Math.max(1, y1 - y0), 1);
+  return Math.max(ZOOM.autoMin, z);
+}
+
+export const clampZoom = (z) => Math.round(Math.min(ZOOM.max, Math.max(ZOOM.min, z)) * 100) / 100;
+
+// Semantic zoom: what a card shows at a zoom. Zoomed out the card keeps its glyph and name (and the ask,
+// which is the point of the canvas); the meta line and status line come back as you zoom in.
+export const detailAt = (z) => (z < 0.55 ? "name" : z < 0.8 ? "brief" : "full");
