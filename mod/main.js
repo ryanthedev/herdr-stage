@@ -6,7 +6,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, run, props, closeOverlay, settings, readTextFile, appHome, shared, setShared } from "herdr";
+import { theme, run, props, closeOverlay, settings, readTextFile, appHome, shared, setShared, exec } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { next, initial, nextCanvas, zoomOf, wheelCanvas } from "./core/nav.js";
@@ -33,6 +33,9 @@ export default class Stage extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     cx.timer.after(80, () => this.handle.focus());
+    // macOS natural scrolling (absent key = the default, on): decides which way cmd-scroll zooms.
+    this.natural = true;
+    exec("defaults", ["read", "-g", "com.apple.swipescrolldirection"]).then((r) => { if (r.code === 0) this.natural = r.stdout.trim() !== "0"; }, () => {});
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
   }
@@ -249,7 +252,7 @@ export default class Stage extends View {
     const dx = (lines ? e.delta_lines.x * 40 : e.delta.x) / (lines ? 1 : az), dy = (lines ? e.delta_lines.y * 40 : e.delta.y) / (lines ? 1 : az);
     const pos = e.local_position ?? (e.bounds ? { x: e.position.x - e.bounds.x, y: e.position.y - e.bounds.y } : e.position);
     const zoom = Boolean(e.modifiers?.platform || e.modifiers?.control);
-    c.cst = wheelCanvas(c.cst, { dx, dy, px: pos.x / az, py: pos.y / az, zoom }, c.cur ?? c.layout, this.view, this.shownCam);
+    c.cst = wheelCanvas(c.cst, { dx, dy, px: pos.x / az, py: pos.y / az, zoom, natural: this.natural }, c.cur ?? c.layout, this.view, this.shownCam);
     cx.stop_propagation(); cx.notify();
   }
 

@@ -1,6 +1,6 @@
 # Resume point (update this before handing off)
 
-**Updated:** 2026-11-08, #220 done + wheel zoom/pan + measured card heights; installed in the main Herdr.
+**Updated:** 2026-11-08, #220 done + wheel zoom/pan + measured heights; installed and loading in the main Herdr (restarted 5:34 PM).
 
 ## Done
 - Summary-on-idle: core/summary.js, adapters/node.js, bin/summary-job.mjs (NOT running in background:
@@ -33,12 +33,17 @@ Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","
 - Cards draw at natural height and report it with on_size_change; core measure() (2px tolerance) feeds
   layoutCanvas(space, detail, heights). Heights kept per space and detail level.
 - Seam takes "wheel": [{dx,dy,px,py,zoom}] (canvas px) to exercise the pan/zoom path without input.
-- UNVERIFIED live: GPUI's raw wheel event decoding (delta sign, px vs lines, local_position units). Nobody may
-  inject scroll into a window here; if scrolling feels inverted, flip the sign in mod/main.js wheel().
+- Wheel sign: GPUI delta.y > 0 = content moves down (GPUI scroll areas add delta to the offset; the herdr-md
+  viewer, whose scrolling works, reads it the same way). Pan follows that. Cmd-scroll zoom follows the hand
+  (fingers/wheel up or away = zoom in): core awayOf(dy, natural); the mod reads macOS natural scrolling with
+  `defaults read -g com.apple.swipescrolldirection` (absent on this Mac = default = natural on).
+- Still not tried by hand: no real scroll has been sent (no input injection allowed). The user should try
+  plain scroll and cmd-scroll once; if either is reversed, the fix is in core/canvas.js wheelStep/awayOf.
 
 ## Next
 - Summary job in the background once the user's usage governor allows (user's call, still paused).
-- The user's main Herdr has the mod installed (~/.config/herdr-app/mods/stage); it shows after their restart.
+- User to try scrolling on the canvas (cmd-g, Enter on a space): plain scroll pans, cmd-scroll up/away zooms in.
+- Stray copy ~/.cache/hdt/mods/stage (another session's test home) could not be removed here; user's call.
 
 ## How to test natively without touching the user's Herdr
 1. `rsync -a --exclude telemetry --exclude '*.bak*' --exclude shared.json --exclude window.json

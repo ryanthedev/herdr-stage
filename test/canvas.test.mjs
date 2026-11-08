@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layoutCanvas, edgeSegments, nearest, camera, firstAgent, scaleLayout, fitZoom, detailAt, ZOOM, measure, wheelStep } from "../core/canvas.js";
+import { layoutCanvas, edgeSegments, nearest, camera, firstAgent, scaleLayout, fitZoom, detailAt, ZOOM, measure, wheelStep, awayOf } from "../core/canvas.js";
 import { nextCanvas, next, zoomOf, wheelCanvas } from "../core/nav.js";
 
 const ag = (o) => ({ pane: "p-" + o.addr, label: o.addr, state: "working", at: "2026-11-08T10:00:00Z", ...o });
@@ -98,22 +98,31 @@ test("measured heights replace the estimate, push later cards down, and ignore j
 });
 test("wheel: zoom keeps the point under the pointer still; pan moves the camera but not off the tree", () => {
   const L = layoutCanvas(space), view = { vw: 1600, vh: 900 }, cam = { x: 100, y: 50 };
-  const p = { px: 700, py: 400 }, r = wheelStep(L, 1, cam, view, { dx: 0, dy: 50, zoom: true, ...p });
-  assert.ok(r.z > 1, "scrolling up with cmd zooms in");
+  const p = { px: 700, py: 400 }, r = wheelStep(L, 1, cam, view, { dx: 0, dy: -50, zoom: true, ...p });
+  assert.ok(r.z > 1, "natural scrolling: fingers up/away (content up, dy < 0) zooms in");
   const before = (p.px - cam.x) / 1, after = (p.px - r.cam.x) / r.z;
   assert.ok(Math.abs(before - after) < 1e-6, "same world x under the pointer");
-  assert.equal(wheelStep(L, ZOOM.max, cam, view, { dx: 0, dy: 1e4, zoom: true, ...p }).z, ZOOM.max);
+  assert.equal(wheelStep(L, ZOOM.max, cam, view, { dx: 0, dy: -1e4, zoom: true, ...p }).z, ZOOM.max);
   assert.deepEqual(wheelStep(L, 1, cam, view, { dx: -30, dy: 20, ...p }).cam, { x: 70, y: 70 });
   const far = wheelStep(L, 1, cam, view, { dx: -1e5, dy: -1e5, ...p }).cam;
   assert.ok(far.x + L.bbox.x1 >= 120 && far.y + L.bbox.y1 >= 120, "some of the tree stays on screen");
 });
 test("wheel then keys: arrows and zoom keys hand the camera back to the selection, space keeps it", () => {
   const L = layoutCanvas(space), view = { vw: 1600, vh: 900 };
-  let s = wheelCanvas({ sel: "solo", drawer: false, zoomSet: false }, { dx: 0, dy: 40, px: 800, py: 450, zoom: true }, L, view, { x: 0, y: 0 });
+  let s = wheelCanvas({ sel: "solo", drawer: false, zoomSet: false }, { dx: 0, dy: -40, px: 800, py: 450, zoom: true }, L, view, { x: 0, y: 0 });
   assert.ok(s.zoomSet && s.zoom > 1 && s.cam);
   assert.ok(nextCanvas(s, " ", L, view).state.cam, "the drawer keeps the view");
   assert.equal(nextCanvas(s, "ArrowUp", L, view).state.cam, null);
   assert.equal(nextCanvas(s, "=", L, view).state.cam, null);
   const pan = wheelCanvas({ sel: "solo", zoomSet: false }, { dx: 10, dy: 0, px: 0, py: 0 }, L, { ...view, fit: 0.8 }, { x: 0, y: 0 });
   assert.equal(pan.zoomSet, false, "panning in fit mode stays fit");
+});
+test("wheel zoom direction follows the hand under both macOS scroll settings", () => {
+  const L = layoutCanvas(space), view = { vw: 1600, vh: 900 }, cam = { x: 0, y: 0 }, at = { dx: 0, px: 800, py: 450, zoom: true };
+  assert.equal(awayOf(-10), 10); assert.equal(awayOf(10, false), 10);
+  assert.ok(wheelStep(L, 1, cam, view, { ...at, dy: -30 }).z > 1, "natural (default): away = dy < 0 = zoom in");
+  assert.ok(wheelStep(L, 1, cam, view, { ...at, dy: 30 }).z < 1, "natural: toward = zoom out");
+  assert.ok(wheelStep(L, 1, cam, view, { ...at, dy: 30, natural: false }).z > 1, "traditional: away = dy > 0 = zoom in");
+  assert.deepEqual(wheelStep(L, 1, cam, view, { dx: 5, dy: 7, px: 0, py: 0, natural: false }).cam,
+    wheelStep(L, 1, cam, view, { dx: 5, dy: 7, px: 0, py: 0 }).cam, "panning follows GPUI's delta either way");
 });

@@ -118,12 +118,16 @@ export function measure(heights, addr, h, tol = 2) {
 }
 
 // Wheel and trackpad. Plain scroll pans; with zoom (cmd or ctrl held) it zooms about the pointer, so the
-// point under it stays put. dx/dy are screen px as GPUI reports them (positive = content moves right/down);
-// px/py the pointer in the canvas. cam is the camera shown now. The tree can't be pushed out of view.
+// point under it stays put. dx/dy are screen px as GPUI reports them: positive = content moves right/down
+// (GPUI scroll areas add delta to their offset; the herdr-md viewer reads it the same way). px/py the pointer
+// in the canvas. cam is the camera shown now. The tree can't be pushed out of view.
+// Zoom follows the hand, as macOS apps do: fingers or wheel moving up/away zoom in. With natural scrolling
+// (the macOS default) that motion moves content up, so dy < 0; with it off, dy > 0. ev.natural says which.
+export const awayOf = (dy, natural = true) => (natural ? -dy : dy);
 export const WHEEL = { zoomPerPx: 0.006, keep: 120 };
 export function wheelStep(layout, z, cam, view, ev) {
   if (ev.zoom) {
-    const z2 = Math.min(ZOOM.max, Math.max(ZOOM.min, z * Math.exp(ev.dy * WHEEL.zoomPerPx)));
+    const z2 = Math.min(ZOOM.max, Math.max(ZOOM.min, z * Math.exp(awayOf(ev.dy, ev.natural ?? true) * WHEEL.zoomPerPx)));
     const wx = (ev.px - cam.x) / z, wy = (ev.py - cam.y) / z;
     return { z: z2, cam: keepInView(layout, z2, { x: ev.px - wx * z2, y: ev.py - wy * z2 }, view) };
   }
