@@ -32,7 +32,7 @@ test("nav: lane -> cards -> step into a card -> open an agent", () => {
   r = next(st, "ArrowDown", vm, 2); st = r.state; assert.equal(st.zone, "cards");
   r = next(st, " ", vm, 2); st = r.state; assert.equal(st.zone, "agents");
   r = next(st, "ArrowDown", vm, 2); st = r.state; assert.equal(st.row, 1);
-  r = next(st, "Enter", vm, 2); assert.deepEqual(r.effect, { open: "agent", space: "s1", pane: vm.cards[0].rows[1].pane });
+  r = next(st, "Enter", vm, 2); assert.deepEqual(r.effect, { open: "agent", space: "s1", pane: vm.cards[0].rows[1].pane, addr: vm.cards[0].rows[1].addr });
 });
 test("nav: grid moves by columns and Enter opens the space; Esc closes", () => {
   const vm = buildStage(input); let st = { ...initial(vm), zone: "cards" };

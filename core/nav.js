@@ -14,7 +14,7 @@ export function next(st, key, vm, cols = 4) {
     const rows = vm.cards[s.card]?.rows ?? [];
     if (dir === "down") s.row = clamp(s.row + 1, 0, rows.length - 1);
     else if (dir === "up") s.row = clamp(s.row - 1, 0, rows.length - 1);
-    else if (key === "enter" || key === "Enter" || dir === "right") return { state: s, effect: rows[s.row] && { open: "agent", space: vm.cards[s.card].id, pane: rows[s.row].pane } };
+    else if (key === "enter" || key === "Enter" || dir === "right") return { state: s, effect: rows[s.row] && { open: "agent", space: vm.cards[s.card].id, pane: rows[s.row].pane, addr: rows[s.row].addr } };
     else if (key === "escape" || key === "Escape" || key === "space" || key === " " || dir === "left") s.zone = "cards";
     return { state: s, effect: null };
   }
@@ -25,7 +25,7 @@ export function next(st, key, vm, cols = 4) {
     if (dir === "left") s.lane = clamp(s.lane - 1, 0, vm.lane.length - 1);
     else if (dir === "right") s.lane = clamp(s.lane + 1, 0, vm.lane.length - 1);
     else if (dir === "down") s.zone = "cards";
-    else if (key === "enter" || key === "Enter") { const m = vm.lane[s.lane]; return { state: s, effect: m && { open: "agent", space: m.space, pane: m.pane } }; }
+    else if (key === "enter" || key === "Enter") { const m = vm.lane[s.lane]; return { state: s, effect: m && { open: "agent", space: m.space, pane: m.pane, addr: m.addr } }; }
     return { state: s, effect: null };
   }
   // cards: a grid of `cols` columns in reading order
@@ -35,5 +35,22 @@ export function next(st, key, vm, cols = 4) {
   else if (dir === "up") { if (s.card - cols >= 0) s.card -= cols; else if (vm.lane.length) s.zone = "lane"; }
   else if (key === "enter" || key === "Enter") return { state: s, effect: { open: "space", space: vm.cards[s.card].id } };
   else if ((key === "space" || key === " ") && vm.cards[s.card]?.rows.length) { s.zone = "agents"; s.row = 0; }
+  return { state: s, effect: null };
+}
+
+// Canvas keys: (cst, key, layout) -> { state, effect }. cst = { sel, drawer }.
+// Effects: { open: "agent", pane } | { back: true } (to the stage).
+import { nearest } from "./canvas.js";
+export function nextCanvas(cst, key, layout) {
+  const s = { ...cst }, dir = DIR[key];
+  if (dir) { s.sel = nearest(layout, s.sel, dir); return { state: s, effect: null }; }
+  if (key === "escape" || key === "Escape") { if (s.drawer) { s.drawer = false; return { state: s, effect: null }; } return { state: s, effect: { back: true } }; }
+  if (key === "space" || key === " ") { s.drawer = !s.drawer; return { state: s, effect: null }; }
+  if (key === "enter" || key === "Enter") { const n = layout.byId[s.sel]; return { state: s, effect: n?.row ? { open: "agent", pane: n.row.pane, addr: n.row.addr } : null }; }
+  if (key === "n") {
+    const moves = layout.nodes.filter((n) => n.kind === "agent" && n.row.move);
+    if (moves.length) { const i = moves.findIndex((n) => n.id === s.sel); s.sel = moves[(i + 1) % moves.length].id; }
+    return { state: s, effect: null };
+  }
   return { state: s, effect: null };
 }

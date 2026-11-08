@@ -6,10 +6,11 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, run, props, closeOverlay, settings } from "herdr";
+import { theme, run, props, closeOverlay, settings, readTextFile, appHome } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
-import { next, initial } from "./core/nav.js";
+import { next, initial, nextCanvas } from "./core/nav.js";
+import { layoutCanvas, edgeSegments, camera, firstAgent } from "./core/canvas.js";
 
 // Six sizes on an 18px base: the whole type scale.
 const T = { cap: 14, sm: 16, body: 18, sub: 22, title: 30, display: 38 };
@@ -39,7 +40,17 @@ export default class Stage extends View {
   refresh(cx) {
     cx.spawn(async (cx) => {
       try {
-        this.vm = buildStage(await gather());
+        this.input = await gather();
+        this.vm = buildStage(this.input);
+        if (this.canvas) this.openCanvas(this.canvas.spaceId, this.canvas.cst.sel);
+        // Test seam: an isolated Herdr home can hold stage-test.json {"space": name, "sel": addr, "drawer": bool}
+        // to open a canvas without key automation. Absent in a real home.
+        if (!this.seamRead) {
+          this.seamRead = true;
+          const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
+          const sp = seam && this.input.spaces.find((x) => x.name === seam.space);
+          if (sp) { this.openCanvas(sp.id, seam.sel); if (seam.drawer) this.canvas.cst.drawer = true; }
+        }
         this.st ??= initial(this.vm);
         this.error = null;
       } catch (e) { this.error = String(e?.message ?? e); }
@@ -54,9 +65,20 @@ export default class Stage extends View {
 
   act(effect) {
     if (!effect) return;
+    if (effect.open === "space") return this.openCanvas(effect.space);
+    if (effect.back) { this.canvas = null; return; }
     closeOverlay(props().overlay);
-    if (effect.open === "agent") run("pane.focus", { pane: effect.pane });
-    else if (effect.open === "space") run("space.select", { id: effect.space });
+    // Helpers have no pane of their own: agent.focus shows them.
+    if (effect.open === "agent") effect.pane ? run("pane.focus", { pane: effect.pane }) : run("agent.focus", { terminal: effect.addr });
+  }
+
+  // The canvas level: one space as a tree. Keeps the selection across refreshes when it still exists.
+  openCanvas(spaceId, keepSel) {
+    const sp = this.input?.spaces.find((s) => s.id === spaceId);
+    if (!sp) { this.canvas = null; return; }
+    const layout = layoutCanvas(sp);
+    const sel = keepSel && layout.byId[keepSel] ? keepSel : firstAgent(layout)?.id ?? "root";
+    this.canvas = { spaceId, space: sp, layout, cst: { sel, drawer: this.canvas?.cst.drawer ?? false } };
   }
 
   glyph(t, r) {
@@ -136,20 +158,85 @@ export default class Stage extends View {
       .child(div().mt(14).text_size(T.sm).text_color(t.muted).child("↑↓ pick   ↵ open   esc back to cards"));
   }
 
+  node(t, n, sel) {
+    if (n.kind === "root") {
+      const sp = this.canvas.space;
+      return v_flex().absolute().left(n.x).top(n.y).w(n.w).gap(6)
+        .child(div().font_family(SERIF).text_size(T.display).font_weight(600).text_color(t.foreground).child(sp.name))
+        .child(div().text_size(T.sm).text_color(t.muted).child((sp.folder || "").replace(/^\/Users\/[^/]+/, "~")))
+        .when(Boolean(sp.git), (el) => el.child(div().text_size(T.sm).text_color(t.muted).child(`⎇ ${sp.git.branch}`)));
+    }
+    if (n.kind === "tab") return div().absolute().left(n.x).top(n.y).w(n.w).h(n.h).flex().items_center().text_size(T.sm).text_color(t.muted).child(n.label);
+    const r = n.row;
+    return v_flex().id(`node-${r.addr}`).absolute().left(n.x).top(n.y).w(n.w).h(n.h).px(18).py(14).gap(4).rounded(14).overflow_hidden()
+      .bg(t.raised ?? "#1a1d23").border(sel ? 2 : 1).border_color(sel ? t.accent : r.move ? MOVE_LINE : t.border)
+      .cursor_pointer().on_click((_e, cx) => { this.canvas.cst.sel = r.addr; cx.notify(); })
+      .child(h_flex().gap(10).items_center().child(h_flex().w(18).flex_none().justify_center().child(this.glyph(t, r)))
+        .child(div().flex_1().min_w(0).truncate().text_size(T.body).font_weight(600).text_color(t.foreground).child(r.label)))
+      .child(div().truncate().text_size(T.cap).text_color(t.muted).child([r.state, ago(r.at), r.tab ? `tab ${r.tab}` : null, r.addr].filter(Boolean).join("  ·  ")))
+      .when(Boolean(r.line), (el) => el.child(div().mt(4).max_h(46).overflow_hidden().text_size(T.sm).text_color(t.muted).child(r.line)))
+      .when(Boolean(r.move), (el) => el.child(div().mt(8).px(12).py(8).rounded(10).bg(MOVE_BG).border(1).border_color(MOVE_LINE).max_h(62).overflow_hidden()
+        .text_size(T.sm).text_color(MOVE_INK).child(`Your move: ${r.move}`)));
+  }
+
+  drawer(t) {
+    const r = this.canvas.layout.byId[this.canvas.cst.sel]?.row;
+    if (!r) return null;
+    return v_flex().id("drawer").w(700).flex_none().h_full().px(28).py(26).gap(16).bg(t.popover).border_l(1).border_color(t.border).overflow_y_scrollbar()
+      .child(div().text_size(T.sub).font_weight(600).child(r.label))
+      .child(div().text_size(T.cap).text_color(t.muted).child([this.canvas.space.name, r.tab ? `tab ${r.tab}` : null, r.state, ago(r.at)].filter(Boolean).join("  ·  ")))
+      .child(v_flex().gap(10).px(20).py(18).rounded(12).bg(t.background)
+        .child(div().text_size(T.cap).font_weight(600).text_color(t.muted).child("SUMMARY"))
+        .child(div().text_size(T.body).text_color(t.foreground).child(r.recap || r.line || (r.state === "working" ? "Still working. A summary is made when it stops." : "No message yet.")))
+        .child(r.move
+          ? div().px(14).py(12).rounded(10).bg(MOVE_BG).border(1).border_color(MOVE_LINE).text_size(T.body).text_color(MOVE_INK).child(`Your move: ${r.move}`)
+          : div().text_size(T.sm).text_color(t.muted).child("Nothing needed from you.")))
+      .when(Boolean(r.text), (el) => el
+        .child(div().text_size(T.cap).font_weight(600).text_color(t.muted).child("LAST MESSAGE"))
+        .child(div().text_size(T.sm).text_color(t.foreground).child(r.text.replace(/\*\*/g, "").slice(0, 2400))));
+  }
+
+  renderCanvas(t, root) {
+    const c = this.canvas, L = c.layout, drawerW = c.cst.drawer ? 700 : 0;
+    const vw = this.width - drawerW, vh = (this.height || 1000) - 80;
+    const cam = camera(L, c.cst.sel, vw, vh);
+    const moves = L.nodes.filter((n) => n.row?.move).length, agentsN = L.nodes.filter((n) => n.kind === "agent").length;
+    const world = div().absolute().left(cam.x).top(cam.y)
+      .children(edgeSegments(L).map((g) => div().absolute().left(g.x).top(g.y).w(Math.max(g.w, 2)).h(Math.max(g.h, 2)).bg(g.hot ? MOVE : t.border)))
+      .children(L.nodes.map((n) => this.node(t, n, n.id === c.cst.sel)));
+    return root
+      .child(h_flex().px(PAD).pt(26).pb(18).items_center().gap(16).border_b(1).border_color(t.border)
+        .child(div().text_size(T.sub).text_color(t.muted).child("Stage  /"))
+        .child(div().text_size(T.sub).font_weight(700).child(c.space.name))
+        .child(div().text_size(T.sm).text_color(t.muted).child([c.space.git ? `⎇ ${c.space.git.branch}` : "no repo yet", `${agentsN} agents`].join("  ·  ")))
+        .child(div().flex_1())
+        .when(moves > 0, (el) => el.child(div().text_size(T.sm).font_weight(600).text_color(MOVE).child(`● ${moves} waiting on you`)))
+        .child(div().text_size(T.cap).text_color(t.muted).child("←↑↓→ move · n next ask · space recap · ↵ open · esc stage")))
+      .child(h_flex().flex_1().min_h(0)
+        .child(div().id("canvas").relative().flex_1().h_full().overflow_hidden().child(world))
+        .when(c.cst.drawer, (el) => el.child(this.drawer(t))));
+  }
+
   render(cx) {
     const t = theme();
     const root = v_flex().id("stage").track_focus(this.handle).size_full().bg(t.background).text_color(t.foreground)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
-      .on_size_change((size, cx) => { const w = size.width / (Number(settings().zoom) || 1); if (Math.abs(w - this.width) > 4) { this.width = w; cx.notify(); } })
+      .on_size_change((size, cx) => { const z = Number(settings().zoom) || 1, w = size.width / z; this.height = size.height / z; if (Math.abs(w - this.width) > 4) { this.width = w; cx.notify(); } })
       .on_key_down((e, cx) => {
         if (!this.vm) return;
         const k = e.key === "tab" && e.modifiers?.shift ? "tab" : e.key;
-        const r = next(this.st, k, this.vm, this.cols());
-        this.st = r.state; this.act(r.effect);
+        if (this.canvas) {
+          const r = nextCanvas(this.canvas.cst, k, this.canvas.layout);
+          this.canvas.cst = r.state; this.act(r.effect);
+        } else {
+          const r = next(this.st, k, this.vm, this.cols());
+          this.st = r.state; this.act(r.effect);
+        }
         cx.stop_propagation(); cx.notify();
       });
     if (this.error) return root.p(PAD).child(div().text_size(T.body).text_color(t.blocked).child(`Stage couldn't load: ${this.error}`));
     if (!this.vm) return root.p(PAD).child(div().text_size(T.body).text_color(t.muted).child("Gathering spaces and agents…"));
+    if (this.canvas) return this.renderCanvas(t, root);
     const vm = this.vm, cols = this.cols();
     const avail = this.width - 2 * PAD - SLACK - (this.st.zone === "agents" ? PICKER + GAP : 0);
     const w = Math.floor((avail - GAP * (cols - 1)) / cols);

@@ -1,6 +1,6 @@
 # Resume point (update this before handing off)
 
-**Updated:** 2026-11-08, mid canvas build (session ~/.config, Claude Code).
+**Updated:** 2026-11-08, canvas level v1 done (session ~/.config, Claude Code).
 
 ## Done
 - Summary-on-idle: core/summary.js, adapters/node.js, bin/summary-job.mjs (NOT running in background:
@@ -9,12 +9,18 @@
 - POC (browser, not in git): ~/.design-loop/herdr/r2/poc.html (both themes, 6-step type scale),
   build notes ~/.design-loop/herdr/r2/BUILD.md. Use it as the visual reference for the canvas.
 
-## In progress: canvas level (inside a space), native
-Plan: core/canvas.js (pure layout: space -> tabs -> agents -> helpers; fixed node sizes, elbow edges as
-axis-aligned segments) + canvas nav (spatial nearest agent; Enter opens agent, Space drawer, Esc back to
-stage) in core/nav.js; adapter adds helpers from terminals() (parent); mod draws nodes absolutely
-positioned in a world panned by a camera (no zoom in v1). Stage Enter on a card switches to the canvas
-instead of closing.
+## Done: canvas level v1 (native)
+core/canvas.js (layout, elbow edge segments, spatial nearest, camera), nextCanvas in core/nav.js; the mod's
+Enter on a stage card opens the canvas, Esc returns. Helpers come from terminals() (parent) and open with
+agent.focus. Recap drawer (Space) shows the summary and the last message. Screens: docs/native-*-v1.png.
+Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer"}) opens a canvas without keys.
+
+## Next
+- Neon noir theme natively (tokens only; no letter-spacing or glow in GPUI: use weight and tinted bands).
+- Zoom on the canvas (GPUI has no transform scale: scale node sizes and positions instead).
+- Card heights are estimates (agentH); if text clips, raise them or measure with on_size_change.
+- Summary job in the background once the user's usage governor allows (user's call).
+- The user's main Herdr needs a restart before cmd-g shows any of this.
 
 ## How to test natively without touching the user's Herdr
 1. `rsync -a --exclude telemetry --exclude '*.bak*' --exclude shared.json --exclude window.json

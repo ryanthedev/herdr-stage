@@ -1,6 +1,6 @@
 // Herdr host adapter: turns the app's live data, git, Claude transcripts and the summary cache into the
 // plain input core/stage.js expects. The only file here that talks to Herdr.
-import { spaces, agents, panes, exec, hc, readTextFile, home } from "herdr";
+import { spaces, agents, panes, terminals, exec, hc, readTextFile, home } from "herdr";
 import { extractAsk } from "./core/asks.js";
 import { lastAssistantText, transcriptRel } from "./core/transcript.js";
 
@@ -50,19 +50,25 @@ async function summaries() {
 }
 
 export async function gather() {
-  const sp = spaces(), ag = agents(), ps = panes(), sum = await summaries();
+  const sp = spaces(), ag = agents(), ps = panes(), terms = terminals(), sum = await summaries();
   const out = [];
   for (const s of sp) out.push(await (async () => {
     const tabIds = new Set(s.tabs.map((t) => t.id));
     const folder = ps.find((p) => tabIds.has(p.tab) && p.cwd)?.cwd ?? s.folder;
-    const mine = ag.filter((a) => a.space === s.id);
+    const paned = ag.filter((a) => a.space === s.id);
+    const listed = new Set(paned.map((a) => a.address));
+    // Helpers an agent started (sub-agents): live terminals whose parent is one of this space's agents.
+    const helpers = terms.filter((t) => t.parent && listed.has(t.parent) && t.state === "live" && !listed.has(t.address))
+      .map((t) => ({ address: t.address, pane: null, tab_name: paned.find((a) => a.address === t.parent)?.tab_name, status: t.status === "error" ? "blocked" : t.status ?? "working",
+        title: t.name || t.template || t.program?.name || t.address, app: t.app ?? t.program?.key ?? "claude-code", parent: t.parent }));
+    const mine = [...paned, ...helpers];
     const list = [];
     for (const a of mine) list.push(await (async () => {
       const m = a.app === "claude-code" && a.status !== "working" ? await messageOf(a.address) : {};
       const sm = sum[a.address], fresh = sm && sm.at === m.at ? sm : null;
       return { addr: a.address, pane: a.pane, tab: a.tab_name, label: m.name || a.title || m.title || a.address, state: a.status,
         msg: m.msg, at: m.at ?? null, first: m.first, ask: m.ask ?? null, question: m.question ?? null,
-        recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null };
+        recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null, text: m.text ?? null, parent: a.parent ?? null };
     })());
     return { id: s.id, name: s.name, folder, git: await gitOf(folder, s.machine), agents: list };
   })());
