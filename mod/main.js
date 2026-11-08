@@ -9,8 +9,8 @@ import { v_flex, h_flex } from "gpui-base";
 import { theme, run, props, closeOverlay, settings, readTextFile, appHome, shared, setShared } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
-import { next, initial, nextCanvas, zoomOf } from "./core/nav.js";
-import { layoutCanvas, edgeSegments, camera, firstAgent, scaleLayout, detailAt } from "./core/canvas.js";
+import { next, initial, nextCanvas, zoomOf, wheelCanvas } from "./core/nav.js";
+import { layoutCanvas, edgeSegments, camera, firstAgent, scaleLayout, detailAt, measure } from "./core/canvas.js";
 import { tokens, THEMES } from "./themes.js";
 
 // Six sizes on an 18px base: the whole type scale.
@@ -54,6 +54,7 @@ export default class Stage extends View {
             this.openCanvas(sp.id, seam.sel);
             if (seam.drawer) this.canvas.cst.drawer = true;
             if (typeof seam.zoom === "number") Object.assign(this.canvas.cst, { zoom: seam.zoom, zoomSet: true });
+            if (Array.isArray(seam.wheel)) this.seamWheel = seam.wheel; // [{dx, dy, px, py, zoom}] in canvas px
           }
         }
         this.st ??= initial(this.vm);
@@ -85,10 +86,14 @@ export default class Stage extends View {
   openCanvas(spaceId, keepSel) {
     const sp = this.input?.spaces.find((s) => s.id === spaceId);
     if (!sp) { this.canvas = null; return; }
-    const layout = layoutCanvas(sp);
+    // Measured card heights per space and detail level outlive refreshes (and reopening the space).
+    this.heights ??= {};
+    const heights = (this.heights[spaceId] ??= {});
+    const layout = layoutCanvas(sp, "full", heights.full ?? {});
     const sel = keepSel && layout.byId[keepSel] ? keepSel : firstAgent(layout)?.id ?? "root";
-    const was = this.canvas?.cst ?? {};
-    this.canvas = { spaceId, space: sp, layout, cst: { sel, drawer: was.drawer ?? false, zoom: was.zoom, zoomSet: was.zoomSet ?? false } };
+    const was = this.canvas?.spaceId === spaceId ? this.canvas.cst : {};
+    this.canvas = { spaceId, space: sp, layout, heights, layouts: { full: layout },
+      cst: { sel, drawer: was.drawer ?? false, zoom: was.zoom, zoomSet: was.zoomSet ?? false, cam: was.cam ?? null } };
   }
 
   // Headings: noir draws them in capitals in a condensed face (its stand-in for tracked, glowing caps).
@@ -185,11 +190,12 @@ export default class Stage extends View {
     if (n.kind === "tab") return div().absolute().left(n.x).top(n.y).w(n.w).h(n.h).flex().items_center()
       .text_size(fs(T.sm)).font_weight(k.caps ? 600 : 400).text_color(k.tabInk).child(this.name(k, n.label));
     const r = n.row, full = detail === "full";
-    return v_flex().id(`node-${r.addr}`).absolute().left(n.x).top(n.y).w(n.w).h(n.h).px(18 * z).py(14 * z).gap(4 * z).rounded(14 * z).overflow_hidden()
+    return v_flex().id(`node-${r.addr}`).absolute().left(n.x).top(n.y).w(n.w).px(18 * z).py(14 * z).gap(4 * z).rounded(14 * z).overflow_hidden()
       .bg(sel ? k.card2 : k.card).border(sel ? 2 : 1).border_color(sel ? k.focus : r.move ? k.moveLine : k.border)
       .when(Boolean(r.move), (el) => el.border_l(Math.max(2, 4 * z)).border_color(sel ? k.focus : k.move))
       .when(sel && k.shadow, (el) => el.shadow_lg())
-      .cursor_pointer().on_click((_e, cx) => { this.canvas.cst.sel = r.addr; cx.notify(); })
+      .on_size_change((size, cx) => this.measured(r.addr, detail, z, size, cx))
+      .cursor_pointer().on_click((_e, cx) => { this.canvas.cst.sel = r.addr; this.canvas.cst.cam = null; cx.notify(); })
       .child(h_flex().gap(10 * z).items_center().child(h_flex().w(18 * z).flex_none().justify_center().child(this.glyph(k, r, z)))
         .child(div().flex_1().min_w(0).truncate().text_size(fs(detail === "name" ? T.sub : T.body)).font_weight(600).text_color(k.ink).child(r.label)))
       .when(detail !== "name", (el) => el.child(div().truncate().text_size(fs(T.cap)).text_color(k.muted)
@@ -219,9 +225,32 @@ export default class Stage extends View {
 
   layoutAt(detail) {
     const c = this.canvas;
-    if (detail === "full") return (c.cur = c.layout);
-    if (c.curDetail !== detail || !c.cur || c.cur === c.layout) { c.cur = layoutCanvas(c.space, detail); c.curDetail = detail; }
+    c.cur = c.layouts[detail] ??= layoutCanvas(c.space, detail, c.heights[detail] ?? {});
     return c.cur;
+  }
+
+  // A card reports its drawn height; a real change re-lays out that detail level (and the fit, for "full").
+  measured(addr, detail, z, size, cx) {
+    const c = this.canvas; if (!c) return;
+    const h = size.height / (Number(settings().zoom) || 1) / z;
+    const next = measure(c.heights[detail] ?? {}, addr, h);
+    if (!next) return;
+    c.heights[detail] = next;
+    delete c.layouts[detail];
+    if (detail === "full") c.layout = c.layouts.full = layoutCanvas(c.space, "full", next);
+    cx.notify();
+  }
+
+  // Two-finger scroll / wheel pans; with cmd or ctrl it zooms about the pointer. GPUI reports zoomed px.
+  wheel(e, cx) {
+    const c = this.canvas; if (!c || !this.shownCam) return;
+    const az = Number(settings().zoom) || 1;
+    const lines = !e.delta.x && !e.delta.y && e.delta_lines;
+    const dx = (lines ? e.delta_lines.x * 40 : e.delta.x) / (lines ? 1 : az), dy = (lines ? e.delta_lines.y * 40 : e.delta.y) / (lines ? 1 : az);
+    const pos = e.local_position ?? (e.bounds ? { x: e.position.x - e.bounds.x, y: e.position.y - e.bounds.y } : e.position);
+    const zoom = Boolean(e.modifiers?.platform || e.modifiers?.control);
+    c.cst = wheelCanvas(c.cst, { dx, dy, px: pos.x / az, py: pos.y / az, zoom }, c.cur ?? c.layout, this.view, this.shownCam);
+    cx.stop_propagation(); cx.notify();
   }
 
   // Zoom buttons, bottom left of the canvas: the same keys the keyboard sends.
@@ -244,11 +273,19 @@ export default class Stage extends View {
     const vw = this.width - drawerW, vh = (this.height || 1000) - 80;
     this.view = { vw, vh };
     this.view.fit = zoomOf({ zoomSet: false }, c.layout, this.view);
+    if (this.seamWheel) {
+      const evs = this.seamWheel; this.seamWheel = null;
+      for (const ev of evs) {
+        const z0 = zoomOf(c.cst, c.layout, this.view), L0 = this.layoutAt(detailAt(z0));
+        c.cst = wheelCanvas(c.cst, ev, L0, this.view, c.cst.cam ?? camera(scaleLayout(L0, z0), c.cst.sel, vw, vh));
+      }
+    }
     // The fit zoom comes from the full layout; the drawn (and navigated) layout is the one sized for that
     // zoom's detail, so zoomed-out cards shrink with what they show.
     const z = zoomOf(c.cst, c.layout, this.view), detail = detailAt(z);
     const L = this.layoutAt(detail), S = scaleLayout(L, z);
-    const cam = camera(S, c.cst.sel, vw, vh);
+    const cam = c.cst.cam ?? camera(S, c.cst.sel, vw, vh);
+    this.shownCam = cam;
     const moves = L.nodes.filter((n) => n.row?.move).length, agentsN = L.nodes.filter((n) => n.kind === "agent").length;
     const ew = Math.max(1, 2 * z);
     const world = div().absolute().left(cam.x).top(cam.y)
@@ -261,9 +298,9 @@ export default class Stage extends View {
         .child(div().text_size(T.sm).text_color(k.muted).child([c.space.git ? `⎇ ${c.space.git.branch}` : "no repo yet", `${agentsN} agents`].join("  ·  ")))
         .child(div().flex_1())
         .when(moves > 0, (el) => el.child(div().text_size(T.sm).font_weight(600).text_color(k.move).child(`● ${moves} waiting on you`)))
-        .child(div().text_size(T.cap).text_color(k.kbd).child("←↑↓→ move · n next ask · space recap · + − 0 zoom · t theme · ↵ open · esc stage")))
+        .child(div().text_size(T.cap).text_color(k.kbd).child("←↑↓→ move · n next ask · space recap · + − 0 or ⌘-scroll zoom · scroll pan · t theme · ↵ open · esc stage")))
       .child(h_flex().flex_1().min_h(0)
-        .child(div().id("canvas").relative().flex_1().h_full().overflow_hidden().child(world).child(this.zoomBar(k, z)))
+        .child(div().id("canvas").relative().flex_1().h_full().overflow_hidden().on_scroll_wheel((e, cx) => this.wheel(e, cx)).child(world).child(this.zoomBar(k, z)))
         .when(c.cst.drawer, (el) => el.child(this.drawer(k))));
   }
 

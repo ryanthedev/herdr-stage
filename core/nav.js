@@ -42,11 +42,14 @@ export function next(st, key, vm, cols = 4) {
 // Canvas keys: (cst, key, layout, view) -> { state, effect }. cst = { sel, drawer, zoom?, zoomSet? };
 // view = { vw, vh } (the canvas viewport, for the fit zoom). zoomSet false means "fit": + and - start from it.
 // Effects: { open: "agent", pane } | { back: true } (to the stage) | { theme: "toggle" }.
-import { nearest, fitZoom, clampZoom, ZOOM } from "./canvas.js";
+import { nearest, fitZoom, clampZoom, ZOOM, wheelStep } from "./canvas.js";
 // view.fit, when given, is the fit zoom the host is showing (it may draw a smaller layout than it navigates).
 export const zoomOf = (cst, layout, view) => (cst.zoomSet ? cst.zoom : view?.fit ?? fitZoom(layout, view?.vw ?? 1600, view?.vh ?? 1000));
+// cst.cam: a camera the user set by scrolling (null: follow the selection). Any key that moves the
+// selection or the zoom hands the camera back to the selection.
 export function nextCanvas(cst, key, layout, view) {
-  const s = { ...cst }, dir = DIR[key];
+  const s = { ...cst, cam: null }, dir = DIR[key];
+  if (!dir && !["+", "=", "-", "0", "n"].includes(key)) s.cam = cst.cam ?? null;
   if (key === "t") return { state: s, effect: { theme: "toggle" } };
   if (key === "+" || key === "=" || key === "-") {
     s.zoom = clampZoom(zoomOf(cst, layout, view) + (key === "-" ? -ZOOM.step : ZOOM.step)); s.zoomSet = true;
@@ -63,4 +66,10 @@ export function nextCanvas(cst, key, layout, view) {
     return { state: s, effect: null };
   }
   return { state: s, effect: null };
+}
+
+// Wheel / trackpad on the canvas: ev = { dx, dy, px, py, zoom }; shownCam is the camera on screen now.
+export function wheelCanvas(cst, ev, layout, view, shownCam) {
+  const r = wheelStep(layout, zoomOf(cst, layout, view), shownCam, view, ev);
+  return { ...cst, zoom: r.z, zoomSet: cst.zoomSet || Boolean(ev.zoom), cam: r.cam };
 }

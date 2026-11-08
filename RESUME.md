@@ -1,6 +1,6 @@
 # Resume point (update this before handing off)
 
-**Updated:** 2026-11-08, #220 done: neon noir theme + canvas zoom (session in ~/repos/herdr-stage).
+**Updated:** 2026-11-08, #220 done + wheel zoom/pan + measured card heights; installed in the main Herdr.
 
 ## Done
 - Summary-on-idle: core/summary.js, adapters/node.js, bin/summary-job.mjs (NOT running in background:
@@ -13,7 +13,7 @@
 core/canvas.js (layout, elbow edge segments, spatial nearest, camera), nextCanvas in core/nav.js; the mod's
 Enter on a stage card opens the canvas, Esc returns. Helpers come from terminals() (parent) and open with
 agent.focus. Recap drawer (Space) shows the summary and the last message. Screens: docs/native-*-v1.png.
-Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","theme","zoom"}) opens a canvas without keys.
+Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","theme","zoom","wheel"}) opens a canvas without keys.
 
 ## Done: #220 neon noir + canvas zoom (native)
 - Theme: mod/themes.js holds every colour/font as tokens ("default" follows the Herdr theme, "noir" is the POC
@@ -26,12 +26,19 @@ Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","
   The skin draws/navigates the detail layout; fit zoom comes from the full one (view.fit).
 - Seam now also takes "theme" and "zoom". Screens: docs/native-*-noir*.png. 28 tests.
 
+## Done: wheel/trackpad + measured heights
+- No pinch/gesture event exists in this GPUI build. on_scroll_wheel on the canvas: plain scroll pans (cst.cam,
+  a free camera; keys that move selection/zoom hand it back), cmd/ctrl+scroll zooms about the pointer
+  (core wheelStep/wheelCanvas; keepInView stops the tree leaving the screen).
+- Cards draw at natural height and report it with on_size_change; core measure() (2px tolerance) feeds
+  layoutCanvas(space, detail, heights). Heights kept per space and detail level.
+- Seam takes "wheel": [{dx,dy,px,py,zoom}] (canvas px) to exercise the pan/zoom path without input.
+- UNVERIFIED live: GPUI's raw wheel event decoding (delta sign, px vs lines, local_position units). Nobody may
+  inject scroll into a window here; if scrolling feels inverted, flip the sign in mod/main.js wheel().
+
 ## Next
-- Card heights are still estimates (agentH); if text clips, raise them or measure with on_size_change.
-- Zoom has no mouse wheel / pinch yet (keyboard and the zoom bar only).
 - Summary job in the background once the user's usage governor allows (user's call, still paused).
-- The user's main Herdr needs a restart before cmd-g shows any of this, and an install to
-  ~/.config/herdr-app/mods/stage (./scripts/install.sh) — not done: the user's window is theirs.
+- The user's main Herdr has the mod installed (~/.config/herdr-app/mods/stage); it shows after their restart.
 
 ## How to test natively without touching the user's Herdr
 1. `rsync -a --exclude telemetry --exclude '*.bak*' --exclude shared.json --exclude window.json
@@ -44,6 +51,8 @@ Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","
 Never automate keys on the user's real display; keyboard behaviour is covered by core tests.
 
 ## Gotchas
+- This session's shell inherits HERDR_APP_HOME=~/.cache/hdt (another session's test home). Always pass
+  HERDR_APP_HOME explicitly to install.sh and herdr-app, or you install into someone else's window.
 - Mods share one script engine; one mod out of memory breaks all mods until Herdr restarts. Keep reads small.
 - on_size_change reports px times the app zoom (1.2): divide by settings().zoom.
 - A flex-wrap row that exactly fills its width wraps early by the scrollbar: keep SLACK px spare.

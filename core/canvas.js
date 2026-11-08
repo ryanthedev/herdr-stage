@@ -9,8 +9,9 @@ export const SIZE = { rootW: 320, tabW: 90, agentW: 440, colGap: 60, rowGap: 24,
 export const agentH = (r, detail = "full") =>
   detail === "name" ? 64 + (r.move ? 80 : 0) : detail === "brief" ? 84 + (r.move ? 80 : 0) : 96 + (r.line ? 56 : 0) + (r.move ? 80 : 0);
 
-// space: { id, name, folder, git, agents: [{ addr, parent?, tab, ... }] }, detail -> { nodes, edges, bbox }
-export function layoutCanvas(space, detail = "full") {
+// space: { id, name, folder, git, agents: [{ addr, parent?, tab, ... }] }, detail, heights -> { nodes, edges, bbox }
+// heights: measured card heights by addr (unscaled px, for this detail); missing ones use the agentH estimate.
+export function layoutCanvas(space, detail = "full", heights = {}) {
   const S = SIZE, rows = space.agents.map((a) => ({ ...agentRow(a), tab: a.tab, parent: a.parent ?? null }));
   const nodes = [], edges = [];
   const root = { id: "root", kind: "root", x: 0, y: 0, w: S.rootW, h: 110 };
@@ -22,11 +23,11 @@ export function layoutCanvas(space, detail = "full") {
     const top = y, tn = { id: `tab:${t}`, kind: "tab", label: /^\d+$/.test(String(t)) ? `tab ${t}` : String(t), x: xTab, y: 0, w: S.tabW, h: 36 };
     nodes.push(tn); edges.push([root.id, tn.id]);
     for (const r of rows.filter((r) => r.tab === t && !r.parent)) {
-      const an = { id: r.addr, kind: "agent", row: r, x: xAgent, y, w: S.agentW, h: agentH(r, detail) };
+      const an = { id: r.addr, kind: "agent", row: r, x: xAgent, y, w: S.agentW, h: heights[r.addr] ?? agentH(r, detail) };
       nodes.push(an); edges.push([tn.id, an.id]);
       let ky = y;
       for (const k of rows.filter((k) => k.parent === r.addr)) {
-        const kn = { id: k.addr, kind: "agent", row: k, x: xHelper, y: ky, w: S.agentW, h: agentH(k, detail) };
+        const kn = { id: k.addr, kind: "agent", row: k, x: xHelper, y: ky, w: S.agentW, h: heights[k.addr] ?? agentH(k, detail) };
         nodes.push(kn); edges.push([an.id, kn.id]); ky += kn.h + S.rowGap;
       }
       y = Math.max(y + an.h + S.rowGap, ky) ;
@@ -108,3 +109,27 @@ export const clampZoom = (z) => Math.round(Math.min(ZOOM.max, Math.max(ZOOM.min,
 // Semantic zoom: what a card shows at a zoom. Zoomed out the card keeps its glyph and name (and the ask,
 // which is the point of the canvas); the meta line and status line come back as you zoom in.
 export const detailAt = (z) => (z < 0.55 ? "name" : z < 0.8 ? "brief" : "full");
+
+// Measured heights: a skin reports a card's drawn height (unscaled). Returns the new map, or null when the
+// change is within tol px, so re-layout (and the next measure) can't loop on sub-pixel jitter.
+export function measure(heights, addr, h, tol = 2) {
+  if (!(h > 0) || Math.abs((heights[addr] ?? -Infinity) - h) <= tol) return null;
+  return { ...heights, [addr]: Math.ceil(h) };
+}
+
+// Wheel and trackpad. Plain scroll pans; with zoom (cmd or ctrl held) it zooms about the pointer, so the
+// point under it stays put. dx/dy are screen px as GPUI reports them (positive = content moves right/down);
+// px/py the pointer in the canvas. cam is the camera shown now. The tree can't be pushed out of view.
+export const WHEEL = { zoomPerPx: 0.006, keep: 120 };
+export function wheelStep(layout, z, cam, view, ev) {
+  if (ev.zoom) {
+    const z2 = Math.min(ZOOM.max, Math.max(ZOOM.min, z * Math.exp(ev.dy * WHEEL.zoomPerPx)));
+    const wx = (ev.px - cam.x) / z, wy = (ev.py - cam.y) / z;
+    return { z: z2, cam: keepInView(layout, z2, { x: ev.px - wx * z2, y: ev.py - wy * z2 }, view) };
+  }
+  return { z, cam: keepInView(layout, z, { x: cam.x + ev.dx, y: cam.y + ev.dy }, view) };
+}
+function keepInView(layout, z, cam, { vw, vh }) {
+  const b = layout.bbox, k = WHEEL.keep, clamp = (v, lo, hi) => (lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v)));
+  return { x: clamp(cam.x, k - b.x1 * z, vw - k - b.x0 * z), y: clamp(cam.y, k - b.y1 * z, vh - k - b.y0 * z) };
+}

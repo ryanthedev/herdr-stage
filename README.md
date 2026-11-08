@@ -11,7 +11,7 @@ every agent that stops. Hexagonal: `core/` is plain JS with no Herdr, UI or Node
 - `bin/eval-summary.mjs` run the ask fixtures through the real model (spends quota; run by hand)
 - `core/stage.js`, `core/nav.js` the stage view-model and its keyboard behaviour (pure, tested)
 - `mod/` the Herdr skin: `adapter.js` (Herdr data, git, transcripts, summary cache), `themes.js` (colour and font
-  tokens: default and neon noir, `t` switches) and `main.js` (drawing; canvas zoom `+` `-` `0`);
+  tokens: default and neon noir, `t` switches) and `main.js` (drawing; canvas zoom `+` `-` `0` or cmd-scroll, scroll pans);
   `scripts/install.sh` copies it plus `core/` into `~/.config/herdr-app/mods/stage`. Opens with cmd-g.
 - `npm test` unit tests (no model calls)
 
