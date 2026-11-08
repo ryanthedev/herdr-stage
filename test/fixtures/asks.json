@@ -1,0 +1,22 @@
+[
+ {
+  "name": "upublish lead, 2026-11-08 (stays yours)",
+  "text": "cmd-console has started on the contrast fix (#214). Docs and QA are working too, and #218 stays yours for when you're back at the keyboard.",
+  "expectMove": true
+ },
+ {
+  "name": "upublish lead, earlier (waiting for you)",
+  "text": "cmd-console is fixing the contrast issue (#214), docs and QA are running, and #218 is waiting for you.",
+  "expectMove": true
+ },
+ {
+  "name": "plain status, nothing for the user",
+  "text": "cmd-data has nothing in flight and is done. It flagged that the Backend add-on entitlement will also enable the anonymous visitor cookie.",
+  "expectMove": false
+ },
+ {
+  "name": "offer is not an ask",
+  "text": "The mod is installed and working. If you want, I can also add a dark theme.",
+  "expectMove": false
+ }
+]
