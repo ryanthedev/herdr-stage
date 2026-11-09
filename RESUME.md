@@ -50,7 +50,7 @@ Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","
    --exclude windows.json --exclude mods/mobile-bridge --exclude '*.sock' ~/.config/herdr-app/ <scratch>/herdr-test2/`
    then set sounds off in its settings.json and drop the mobile-bridge block from layouts/matrix.json.
 2. Short path (unix socket limit ~104 chars): `ln -sfn <scratch>/herdr-test2 ~/.cache/hst`
-3. Launch in background: `HERDR_APP_HOME=/Users/r/.cache/hst /Applications/Herdr.app/Contents/MacOS/Herdr`
+3. Launch in background with Claude's session env stripped (the `env -u` line in `CLAUDE.md`; never launch Herdr from a Claude shell without it)
 4. `HERDR_APP_HOME=~/.cache/hst ./scripts/install.sh`, then `herdr-app do mod.open '{"name":"stage"}'`,
    `herdr-app shot`, `herdr-app status` (errors). Close: stop the background task, `unlink ~/.cache/hst`.
 Never automate keys on the user's real display; keyboard behaviour is covered by core tests.
