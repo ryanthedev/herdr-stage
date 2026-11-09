@@ -30,9 +30,19 @@ import { track, prune, rank } from "./core/order.js";
 import { parentsOf, families, labelsOf } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
 import { MISSION as K, machineColor } from "./themes.js";
+import { Help } from "./help/help.js";
 import { SCAN, LIST, parseScan, machineRows, folderRows, startRows, nextOpen } from "./core/open.js";
 
 const MOD = "stage";
+
+// Stage's keys for the ? overlay (herdr-help, ~/repos/herdr-help). Keep in step with key(), findKey() and
+// core/open.js nextOpen().
+const KEYS = [
+  ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["q", "close Stage"]]],
+  ["FIND A SPACE", [["/", "filter by name, machine, folder, branch, agents"], ["⌃n ⌃p", "next / previous match (or arrows)"], ["Enter", "go there"], ["⌃u", "clear the filter"], ["Esc", "back to the list"]]],
+  ["NEW SPACE", [["n", "new space: machine, then folder, then what to start"], ["Enter", "next step; on the last, open the space"], ["Tab →", "show a folder's subfolders"], ["~/x /x", "type a path to use it (made if missing)"], ["Esc", "back a step"]]],
+  ["ANYWHERE", [["⌘G", "open Stage beside you, or focus it (keys.json)"], ["?", "these keys"]]],
+];
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
 const T = { meta: 10, msg: 13, title: 13.5, status: 12, name: 16, field: 14 };
 
@@ -59,6 +69,7 @@ export default class Stage extends View {
     this.uid = Math.random().toString(36).slice(2, 8);
     this.scroll = VirtualListScrollHandle.new();
     this.handle = cx.focus_handle();
+    this.keysHelp = new Help(KEYS, { title: "Stage keys", mod: MOD });
     this.handle.focus();
     cx.timer.after(60, () => this.handle.focus());
     // cmd-g in a tab that already shows a stage: this new copy hands focus to that one and closes itself.
@@ -84,6 +95,8 @@ export default class Stage extends View {
       try {
         const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
         if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
+        // {"help": true | "filter words"}: the ? key list, optionally filtered.
+        if (seam?.help) { this.keysHelp.open(cx); if (typeof seam.help === "string") this.keysHelp.st = { q: seam.help, typing: false, y: 0 }; }
         // {"open": {"step": "folder", "machine": "ska", "query": ""}}: the new-space picker at a step.
         if (seam?.open) {
           this.startOpen(cx);
@@ -253,6 +266,8 @@ export default class Stage extends View {
   }
 
   key(e, list, rows, cx) {
+    // ? opens the key list, except while typing a filter or a path (there ? is a character).
+    if ((this.keysHelp.shown || (!this.find && !this.open)) && this.keysHelp.key(e, cx)) return;
     if (this.open) return this.openKey(e, cx);
     if (this.find) return this.findKey(e, list, cx);
     if (e.key === "n" && !e.modifiers?.platform && !e.modifiers?.control) { this.startOpen(cx); cx.stop_propagation(); return cx.notify(); }
@@ -449,7 +464,7 @@ export default class Stage extends View {
     // one layer shows), so Stage paints their combined cover, 1 - (1 - op)^2, to match.
     const op = Math.max(0, Math.min(1, Number(layout()?.terminal_opacity ?? settings().terminal_opacity ?? 1)));
     const ground = tint(theme().background, Math.round((1 - (1 - op) ** 2) * 255), K.bg);
-    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(ground).text_color(K.ink).font_family(this.font)
+    const root = v_flex().id(`stage-${this.uid}`).relative().track_focus(this.handle).size_full().bg(ground).text_color(K.ink).font_family(this.font)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {
         const z = Number(settings().zoom) || 1, nw = size.width / z;
@@ -478,7 +493,7 @@ export default class Stage extends View {
       .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
       .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.open ? (this.open.step === "folder" ? "↵ next · tab/→ inside · esc back" : "↵ next · esc back")
-        : this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · n new · q")));
+        : this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · n new · ? keys")));
     // While picking a new space the field is that step's filter; its placeholder says what to type.
     const typing = this.open ?? this.find;
     const hint = this.open ? { machine: "Type to filter machines", folder: "Filter, or type a path: ~/src/new", start: "Claude, Codex or a shell" }[this.open.step] : "";
@@ -495,6 +510,7 @@ export default class Stage extends View {
         .text_size(T.status).text_color(K.ink2).child(div().text_color(K.accent).child("\uf067")).when(tier !== "xs", (el) => el.child("New space"))
         .on_click((_e, cx) => { this.startOpen(cx); this.handle.focus(); cx.notify(); })));
     const bottom = v_flex().pt(8).border_t(1).border_color(K.rule).child(status).child(field);
-    return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom);
+    const help = this.keysHelp.panel({ bg: K.bg, surface: K.surface, border: K.rule, ink: K.ink, ink2: K.ink2, dim: K.ink3, accent: K.accent, warn: K.need, font: this.font, mono: this.font });
+    return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom).when(Boolean(help), (el) => el.child(help));
   }
 }

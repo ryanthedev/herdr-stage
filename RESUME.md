@@ -1,5 +1,16 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09 (late afternoon): ? key help from a shared package
+- `?` in Stage opens its key list. It comes from ~/repos/herdr-help (new repo): help-core.js (pure, tested)
+  + help.js (overlay), copied into mod/help/ by ~/repos/herdr-help/sync.sh; install.sh copies mod/help/.
+  Edit the package there, never mod/help/. KEYS in main.js must follow key()/findKey()/nextOpen().
+- Gotcha (verified): a mod can't import from outside its folder, symlinks included ("resolves outside the
+  application directory"), hence the copies.
+- GPUI: an absolutely positioned child gives its parent no height; size the scroll window explicitly from a
+  measured container (help.js availH/contentH).
+- User chose: no global key for the new-space picker (only n in Stage); other mods adopt herdr-help later
+  (herdr-md / herdr-draw have their own sessions).
+
 ## 2026-11-09 (afternoon): open a space on any machine
 - Stage `n` (or the "+ New space" button by the field) opens a picker in place of the list: machine
   (`hc machine ls`, remotes first, offline ones can't be picked) -> folder -> Claude Code / Codex / Shell.
