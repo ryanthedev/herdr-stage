@@ -31,3 +31,14 @@ so the adapter reads small transcript tails, one at a time, only for agents that
 
 - `n` new space: `core/open.js` (machine, folder, program; tested) and the scan it runs on the machine.
 - `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
+
+## Nesting a space under another
+
+Label any terminal in the child space; Stage shows the child indented under the parent:
+
+```sh
+hc label <terminal> stage.parent=<parent space name or id>    # e.g. hc label vana/t9 stage.parent=devops
+```
+
+Works for spaces on other machines too. A parent given by name is looked for on the child's machine first.
+"Parent" here is only this label: it doesn't change the space's folder.

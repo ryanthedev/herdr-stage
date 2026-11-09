@@ -27,7 +27,7 @@ import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
 import { tierFor, rowView, rowHeight, statusOf, slotW, ROW, SIDE, BUBBLE_GAP } from "./core/rows.js";
 import { track, prune, rank } from "./core/order.js";
-import { parentsOf, families, labelsOf } from "./core/nest.js";
+import { parentsOf, families, spaceIdOf } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
 import { MISSION as K, machineColor } from "./themes.js";
 import { Help } from "./help/help.js";
@@ -146,7 +146,7 @@ export default class Stage extends View {
       return { id: s.id, urgent: s.status === "blocked" || Boolean(c?.counts.move), activityAt: at || null };
     });
     const agentSpace = Object.fromEntries(agents().map((a) => [a.address, a.space]));
-    const where = (t) => labelsOf(t)["herdr.space"] ?? agentSpace[t.address] ?? null;
+    const where = (t) => spaceIdOf(t, agentSpace);
     this.parent = parentsOf(terminals().filter((t) => t.state === "live"), sp, where);
     const idOf = (name) => sp.find((s) => s.name === name)?.id;
     for (const [child, par] of Object.entries(this.seamParents ?? {})) if (idOf(child) && idOf(par)) this.parent[idOf(child)] = idOf(par);

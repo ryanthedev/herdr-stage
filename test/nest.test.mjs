@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parentsOf, families } from "../core/nest.js";
+import { parentsOf, families, spaceIdOf } from "../core/nest.js";
 
 const spaces = [{ id: "A", name: "upublish" }, { id: "B", name: "cmd-data" }, { id: "C", name: "cmd-ui" }, { id: "D", name: "life" }];
 const where = { t1: "B", t2: "C", t3: "A", t4: "D" };
@@ -24,4 +24,13 @@ test("families: children follow their parent; a high-ranked child lifts its fami
   assert.equal(out[1].kids, 2);
   // C ranked first: the whole A family goes first.
   assert.deepEqual(families(["C", "D", "A", "B"], { B: "A", C: "A" }).map((e) => e.id), ["A", "C", "B", "D"]);
+});
+
+test("remote terminals: their space gets the machine prefix back; names prefer the same machine", () => {
+  assert.equal(spaceIdOf({ address: "vana/t9", labels: { "herdr.space": "spF" } }), "vana/spF");
+  assert.equal(spaceIdOf({ address: "t2", labels: { "herdr.space": "spL" } }), "spL");
+  assert.equal(spaceIdOf({ address: "vana/t9", labels: {} }, { "vana/t9": "vana/spF" }), "vana/spF");
+  const spaces = [{ id: "spD", name: "devops" }, { id: "vana/spD", name: "devops" }, { id: "vana/spF", name: "SEC" }, { id: "spX", name: "x" }];
+  const terms = [{ address: "vana/t9", labels: { "herdr.space": "spF", "stage.parent": "devops" } }, { address: "t1", labels: { "herdr.space": "spX", "stage.parent": "devops" } }];
+  assert.deepEqual(parentsOf(terms, spaces, (t) => spaceIdOf(t)), { "vana/spF": "vana/spD", spX: "spD" });
 });

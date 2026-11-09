@@ -8,15 +8,31 @@ export function labelsOf(t) {
   return l;
 }
 
+// The space a terminal sits in, as spaces() names it. A remote terminal ("vana/t9") reports its space
+// without the machine ("sp…"), while spaces() lists it as "vana/sp…": add the machine back.
+export function spaceIdOf(t, agentSpace = {}) {
+  const raw = labelsOf(t)["herdr.space"] ?? agentSpace[t?.address] ?? null;
+  const machine = String(t?.address ?? "").includes("/") ? String(t.address).split("/")[0] : null;
+  return raw && machine && !raw.includes("/") ? `${machine}/${raw}` : raw;
+}
+
+const machineOf = (id) => (String(id).includes("/") ? String(id).split("/")[0] : "");
+
 // -> { [childSpaceId]: parentSpaceId }. spaceOf(terminal) says which space a terminal sits in.
+// A parent named by name is looked for on the child's own machine first (two machines can each have a
+// "scratch"), then anywhere.
 // Unknown parents, self-parents and cycles are dropped (the space stays top level).
 export function parentsOf(terminals, spaces, spaceOf) {
-  const byName = new Map(spaces.map((s) => [s.name, s.id])), ids = new Set(spaces.map((s) => s.id));
+  const ids = new Set(spaces.map((s) => s.id));
+  const named = (name, child) => {
+    const all = spaces.filter((s) => s.name === name);
+    return (all.find((s) => machineOf(s.id) === machineOf(child)) ?? all[0])?.id;
+  };
   const parent = {};
   for (const t of terminals) {
     const want = labelsOf(t)["stage.parent"], child = spaceOf(t);
     if (!want || !child || parent[child]) continue;
-    const p = ids.has(want) ? want : byName.get(want);
+    const p = ids.has(want) ? want : named(want, child);
     if (p && p !== child) parent[child] = p;
   }
   // Every space on a cycle goes back to top level (decided before any edge is removed).

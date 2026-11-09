@@ -1,5 +1,12 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09 (evening): nesting on remote machines
+- Bug fixed: a remote terminal's herdr.space label has no machine ("spf78…") while spaces() ids do
+  ("vana/spf78…"), so remote spaces never nested. core/nest.js spaceIdOf adds the machine back; a parent
+  named by name prefers the child's machine. SEC-6096 (vana/t9) now sits under devops (label set by hand).
+- The vana devops agent read "make the parent a DEVOPS thing" as the folder; README now says how to nest.
+- Counts on the meta line are chips now; screenshots in README; both repos public on GitHub.
+
 ## 2026-11-09 (late afternoon): ? key help from a shared package
 - `?` in Stage opens its key list. It comes from ~/repos/herdr-help (new repo): help-core.js (pure, tested)
   + help.js (overlay), copied into mod/help/ by ~/repos/herdr-help/sync.sh; install.sh copies mod/help/.
