@@ -155,7 +155,7 @@ export default class Stage extends View {
     const parts = [parentName && `↳ ${parentName}`, branch && `⎇ ${branch}`, c?.facts[0],
       n(c?.counts.idle, "idle", "idle"), n(c?.counts.mods, "dashboard", "dashboards"), n(c?.counts.shells, "shell", "shells"), n(c?.counts.procs, "process", "processes"),
       e.kids ? `${e.kids} nested` : null];
-    return div().truncate().font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(parts.filter(Boolean).join(" · "));
+    return div().truncate().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(parts.filter(Boolean).join(" · "));
   }
 
   // What a bubble says, up to three lines: the ask, else the agent's recap or last message, else what it is.
@@ -175,7 +175,7 @@ export default class Stage extends View {
       .rounded_tl(16).rounded_tr(16).rounded_br(16).rounded_bl(6).bg(K.surface)
       .child(h_flex().flex_none().h(19).gap(8).items_center().min_w(0)
         .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.ink).child(title || ""))
-        .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
+        .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
       .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.amber : K.ink2).child(this.message(i)));
   }
 
@@ -199,7 +199,7 @@ export default class Stage extends View {
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
       .child(this.status(c, live))
-      .when(live.active, (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.accent).child("active")))
+      .when(live.active, (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.accent).child("active")))
       .child(div().flex_1());
     const body = v_flex().h(rowHeight(c, tier)).w_full().pl(SIDE + indent).pr(SIDE).justify_center().relative()
       .when(on, (el) => el.child(div().absolute().inset_0().bg(K.pulse).loop("opacity", { from: 0.25, to: 1, period: 1800 })))
@@ -210,7 +210,7 @@ export default class Stage extends View {
     return body.child(div().mt(2).child(this.metaLine(e, c, live)))
       .when(v.bubbles.length > 0, (el) => el.child(h_flex().mt(ROW.gap).gap(BUBBLE_GAP).min_w(0).overflow_hidden()
         .children([...v.bubbles.map((i) => this.bubble(i, bw)),
-          ...(v.more > 0 ? [div().flex_none().self_center().px(4).font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(`+${v.more}`)] : [])])));
+          ...(v.more > 0 ? [div().flex_none().self_center().px(4).font_family(this.font).text_size(T.meta).text_color(K.ink3).child(`+${v.more}`)] : [])])));
   }
 
   key(e, list, rows, cx) {
@@ -271,7 +271,9 @@ export default class Stage extends View {
     // Reading panes() here also redraws the pane when focus moves elsewhere (it is live data).
     const active = this.handle.is_focused() && panes().find((p) => p.focused)?.mod === MOD;
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
-    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(K.bg).text_color(K.ink)
+    // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
+    this.font = String(settings().font || settings().font_family || K.mono);
+    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(K.bg).text_color(K.ink).font_family(this.font)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {
         const z = Number(settings().zoom) || 1, nw = size.width / z;
@@ -295,7 +297,7 @@ export default class Stage extends View {
       .child(Scrollbar.vertical("stage-rows").absolute().inset_0());
     // The bottom, as in Heel: a status line, then one rounded field to jump to a space (/ focuses it).
     const working = Object.values(this.byId).reduce((n, c) => n + (c.counts.working || 0), 0);
-    const status = h_flex().px(SIDE + 6).pb(7).gap(10).font_family(K.mono).text_size(T.meta).text_color(K.ink3)
+    const status = h_flex().px(SIDE + 6).pb(7).gap(10).font_family(this.font).text_size(T.meta).text_color(K.ink3)
       .child(div().flex_none().text_color(this.error ? K.amber : K.accent).child("●"))
       .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
@@ -305,7 +307,7 @@ export default class Stage extends View {
       .child(this.find
         ? h_flex().flex_1().min_w(0).gap(1).items_center().text_size(T.field).text_color(K.ink).child(div().child(this.find.query)).child(div().w(2).h(16).bg(K.accent))
         : div().flex_1().min_w(0).truncate().text_size(T.field).text_color(K.ink3).child(tier === "xs" ? "Jump…" : "Jump to a space   /"))
-      .when(Boolean(this.find), (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(`${list.length}`)));
+      .when(Boolean(this.find), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(`${list.length}`)));
     const bottom = v_flex().pt(8).border_t(1).border_color(K.rule).child(status).child(field);
     return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom);
   }
