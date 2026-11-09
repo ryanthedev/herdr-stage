@@ -33,7 +33,7 @@ import { MISSION as K } from "./themes.js";
 
 const MOD = "stage";
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
-const T = { meta: 10, msg: 12.5, title: 13.5, status: 12, name: 16, field: 14 };
+const T = { meta: 10, msg: 13, title: 13.5, status: 12, name: 16, field: 14 };
 
 function ago(iso) {
   if (!iso) return "";
@@ -182,7 +182,7 @@ export default class Stage extends View {
     if (i.move) return i.move;
     const flat = (s) => String(s ?? "").replace(/\*\*|__|`|^#+\s*/gm, "").replace(/\s*\n+\s*/g, " ").trim();
     if (i.kind === "agent") return flat(i.recap) || flat(i.text).slice(0, 320) || i.line || "";
-    return i.kind === "mod" ? "dashboard" : i.detail ?? i.kind;
+    return i.detail ?? i.kind;
   }
 
   // One item as a message bubble: title with its age on the right, then up to three lines of message.
@@ -196,7 +196,8 @@ export default class Stage extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.title).child(title || ""))
         .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
       // An ask reads in full-strength ink; other messages are secondary ink. No edge bar (the user found it ugly).
-      .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.ink : K.ink2).child(this.message(i)));
+      // Message text in a reading sans (SF Pro Text), not the mono font the rest of Stage uses.
+      .child(div().h(51).overflow_hidden().font_family(K.read).text_size(T.msg).line_height("17px").text_color(need ? K.ink : K.ink2).child(this.message(i)));
   }
 
   // The name, with the characters a search matched drawn in the accent.

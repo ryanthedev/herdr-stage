@@ -18,6 +18,8 @@ export const MISSION = {
   need: "#FF6FA3",
   done: "#8FB894", idle: "#7A867C", pulse: "#B0EFB518",
   sans: null, mono: "SF Mono",
+  // Bubble message text: Apple's reading sans, smoother over three lines than the mono font.
+  read: "SF Pro Text",
 };
 
 const tint = (c, a, fallback) => (/^#[0-9a-f]{6}$/i.test(c ?? "") ? c + a.toString(16).padStart(2, "0") : fallback);

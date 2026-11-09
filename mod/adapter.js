@@ -3,6 +3,7 @@
 import { spaces, agents, panes, terminals, exec, hc, readTextFile, home } from "herdr";
 import { extractAsk } from "./core/asks.js";
 import { lastAssistantText, lastUserPrompt, titleOf, transcriptRel } from "./core/transcript.js";
+import { mdGist, dashOf } from "./core/dash.js";
 
 const GIT_TTL = 60000;
 // Mods share one script engine, and a mod that runs it out of memory breaks every mod until Herdr restarts
@@ -56,16 +57,59 @@ async function summaries() {
   try { return JSON.parse((await readTextFile(`${home()}/.cache/herdr-stage/summaries.json`)) ?? "{}"); } catch { return {}; }
 }
 
+// Mod panes' props (herdr-md / herdr-draw keep their file in props.file), from the layout document over
+// `hc connect`: panes() doesn't carry props. One call per refresh.
+async function modProps() {
+  const req = '{"jsonrpc":"2.0","id":0,"method":"hello","params":{"generation":1}}\n{"jsonrpc":"2.0","id":1,"method":"doc.get","params":{"name":"herdr-app"}}\n';
+  const r = await exec("sh", ["-c", 'printf "%s" "$1" | hc connect', "sh", req]).catch(() => null);
+  const out = {};
+  for (const line of String(r?.stdout ?? "").split("\n")) {
+    let m; try { m = JSON.parse(line); } catch { continue; }
+    if (m?.id !== 1) continue;
+    const walk = (n) => {
+      if (!n || typeof n !== "object") return;
+      if (n.content?.mod && n.id) out[n.id] = n.content.props ?? null;
+      for (const c of n.children ?? []) walk(c);
+    };
+    for (const s of m.result?.value?.spaces ?? []) for (const t of s.tabs ?? []) walk(t.root);
+  }
+  return out;
+}
+
+// What a dashboard's file holds, cached by path and mtime: a markdown file's opening (first 4 KB),
+// a board's shape count (counted with grep, so a board full of images is never loaded into the engine).
+const fileCache = new Map();
+async function fileFacts(path, mod) {
+  const st = await exec("stat", ["-f", "%m", path]).catch(() => null);
+  if (st?.code !== 0) return null;
+  const mtimeMs = Number(st.stdout.trim()) * 1000, hit = fileCache.get(path);
+  if (hit?.mtimeMs === mtimeMs) return hit;
+  const facts = { path, mtimeMs };
+  if (mod === "herdr-draw") {
+    const c = await exec("sh", ["-c", `grep -o '"versionNonce"' "$1" | wc -l`, "sh", path]).catch(() => null);
+    if (c?.code === 0) facts.shapes = Number(c.stdout.trim());
+  } else {
+    const h = await exec("head", ["-c", "4000", path]).catch(() => null);
+    if (h?.code === 0) facts.gist = mdGist(h.stdout);
+  }
+  fileCache.set(path, facts);
+  return facts;
+}
+
 // A pane that isn't an agent: { kind: "mod" | "shell" | "process", label, detail, tab, pane }.
-function otherOf(p, tab) {
+async function otherOf(p, tab, props) {
   const short = (d) => (d || "").replace(/^\/Users\/[^/]+/, "~");
-  if (!p.terminal) return { kind: "mod", label: p.title || p.mod, detail: p.mod, tab, pane: p.pane, terminal: null };
+  if (!p.terminal) {
+    const pr = props[p.pane] ?? null, file = typeof pr?.file === "string" ? await fileFacts(pr.file, p.mod) : null;
+    const d = dashOf(p.mod, pr, file, home());
+    return { kind: "mod", label: d.label, detail: d.text, at: d.at, tab, pane: p.pane, terminal: null };
+  }
   const shell = p.program?.shell || p.program?.key === "shell";
   return { kind: shell ? "shell" : "process", label: shell ? p.program?.name || "shell" : p.program?.name || p.title, detail: short(p.cwd), tab, pane: p.pane, terminal: p.terminal };
 }
 
 export async function gather() {
-  const sp = spaces(), ag = agents(), ps = panes(), terms = terminals(), sum = await summaries();
+  const sp = spaces(), ag = agents(), ps = panes(), terms = terminals(), sum = await summaries(), props = await modProps();
   const out = [];
   for (const s of sp) out.push(await (async () => {
     const tabIds = new Set(s.tabs.map((t) => t.id));
@@ -90,8 +134,9 @@ export async function gather() {
     })());
     // Everything else in the space: mod panes (dashboards like herdr-md or draw), shells and other processes.
     const tabName = Object.fromEntries(s.tabs.map((t) => [t.id, t.name]));
-    const others = ps.filter((p) => tabIds.has(p.tab) && p.mod !== "stage" && !listed.has(p.terminal) && !(p.status || p.program?.agent))
-      .map((p) => otherOf(p, tabName[p.tab]));
+    const others = [];
+    for (const p of ps.filter((p) => tabIds.has(p.tab) && p.mod !== "stage" && !listed.has(p.terminal) && !(p.status || p.program?.agent)))
+      others.push(await otherOf(p, tabName[p.tab], props));
     return { id: s.id, name: s.name, folder, git: await gitOf(folder, s.machine), agents: list, others };
   })());
   return { spaces: out };
