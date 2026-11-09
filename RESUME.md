@@ -8,8 +8,9 @@
   scroll_to_item(row). Virtual-list renderers can't hold handlers, so clicks = wrapper mouse-down (column) +
   on_item_click (row key): single click selects, Enter opens.
 - Removed: core/roles.js, ROLES.md, core/list.js and their tests. Proxy bar and "led by" lines are gone.
-- Verified: renders in an isolated test window (14 spaces, 2 columns, overflow). NOT verified by hand: hjkl and
-  scroll-follow (no key automation allowed). Not installed into the main Herdr.
+- Design pass: raised cards (shadow_md, shadow_xl when selected), lit top edge, "!" ask glyphs, ages, pill header.
+- Verified: renders in an isolated test window. Installed into the main Herdr 2026-11-08. NOT verified by hand: hjkl and
+  scroll-follow (no key automation allowed).
 
 ## 2026-11-08 (later): Stage is now a side pane, not a popup
 - User found the popup ugly and asked for a side pane they can move focus into, like herdr-md. v1 shows only

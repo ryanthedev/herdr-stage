@@ -18,9 +18,18 @@ import { nextGrid, colsFor, rowOf, rowsFor } from "./core/grid.js";
 import { tokens } from "./themes.js";
 
 const MOD = "stage";
-const T = { cap: 12, sm: 13, body: 15 };
-const CARD_MIN = 260, CARD_H = 156, GAP = 10, PAD = 10, SLACK = 14; // SLACK: room for the scrollbar
+const T = { tiny: 11, cap: 12, sm: 13, body: 15, name: 20 };
+const CARD_MIN = 270, CARD_H = 184, GAP = 14, PAD = 14, SLACK = 14; // SLACK: room for the scrollbar
 const ROW_H = CARD_H + GAP;
+
+function ago(iso) {
+  if (!iso) return "";
+  const m = Math.floor((Date.now() - Date.parse(iso)) / 60000);
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+}
+
+// A #rrggbb colour at some alpha (0-255), or the fallback when the theme gave another form.
+const tint = (c, a, fallback) => (/^#[0-9a-f]{6}$/i.test(c ?? "") ? c + a.toString(16).padStart(2, "0") : fallback);
 
 export default class Stage extends View {
   init(_props, cx) {
@@ -73,49 +82,61 @@ export default class Stage extends View {
 
   cardW(cols) { return Math.floor((this.width - 2 * PAD - SLACK - GAP * (cols - 1)) / cols); }
 
+  // "2 your move  ·  1 working  ·  ○ 3 idle", each with its own coloured dot (the POC's status line).
   counts(k, c, live) {
+    const part = (n, label, color, ring) => h_flex().gap(5).items_center()
+      .child(ring ? div().size(7).rounded(4).border(1).border_color(color) : div().size(7).rounded(4).bg(color))
+      .child(div().text_color(color).child(`${n} ${label}`));
     const parts = [];
-    if (c?.counts.move) parts.push(div().text_color(k.move).font_weight(600).child(`${c.counts.move} your move`));
-    if (c?.counts.working) parts.push(div().text_color(k.working).child(`${c.counts.working} working`));
-    if (c?.counts.idle) parts.push(div().child(`${c.counts.idle} idle`));
-    if (!parts.length) parts.push(div().child(c ? "nothing running" : live.status ?? ""));
-    const sep = () => div().child("·");
-    return h_flex().gap(6).text_size(T.cap).text_color(k.muted).children(parts.flatMap((p, i) => (i ? [sep(), p] : [p])));
+    if (c?.counts.move) parts.push(part(c.counts.move, "your move", k.move));
+    if (c?.counts.working) parts.push(part(c.counts.working, "working", k.working));
+    if (c?.counts.idle) parts.push(part(c.counts.idle, "idle", k.muted, true));
+    if (!parts.length) parts.push(div().text_color(k.idle).child(c ? "nothing running" : live.status ?? ""));
+    return h_flex().gap(12).text_size(T.cap).font_weight(600).children(parts);
   }
 
-  dot(k, c, live) {
-    const color = c?.counts.move ? k.move : c?.counts.working || live.status === "working" ? k.working
-      : live.status === "blocked" ? k.blocked : live.status === "done" ? k.done : null;
-    return color ? div().size(8).flex_none().rounded(4).bg(color) : div().size(8).flex_none().rounded(4).border(1).border_color(k.idle);
+  // An agent's state as a glyph: an orange "!" when it needs you, a dot otherwise.
+  glyph(k, r) {
+    if (r.move) return div().size(14).flex_none().rounded(4).bg(k.move).text_size(10).font_weight(800).text_color(k.onMove)
+      .flex().items_center().justify_center().child("!");
+    const color = r.state === "working" ? k.working : r.state === "done" ? k.done : null;
+    return h_flex().w(14).flex_none().justify_center()
+      .child(color ? div().size(7).rounded(4).bg(color) : div().size(7).rounded(4).border(1).border_color(k.idle));
   }
 
-  // One agent line on a card: its state colour, its label, and what it is doing or asking.
+  // One agent on a card: label and age on top, its ask (orange) or what it's doing underneath.
   agent(k, r) {
-    const color = r.move ? k.move : r.state === "working" ? k.working : k.idle;
-    return h_flex().gap(6).items_center().min_w(0).text_size(T.cap)
-      .child(div().size(5).flex_none().rounded(3).bg(color))
-      .child(div().flex_none().max_w(110).truncate().text_color(k.ink2).child(r.label))
-      .child(div().flex_1().min_w(0).truncate().text_color(r.move ? k.moveRow : k.muted).child(r.move ?? r.line ?? ""));
+    const sub = r.move ?? r.line;
+    return h_flex().gap(8).items_start().min_w(0)
+      .child(div().mt(2).child(this.glyph(k, r)))
+      .child(v_flex().flex_1().min_w(0).gap(1)
+        .child(h_flex().gap(8).min_w(0)
+          .child(div().flex_1().min_w(0).truncate().text_size(T.sm).text_color(k.ink).child(r.label))
+          .child(div().flex_none().text_size(T.tiny).text_color(k.idle).child(ago(r.at))))
+        .when(Boolean(sub), (el) => el.child(div().truncate().text_size(T.cap).text_color(r.move ? k.moveRow : k.muted).child(sub))));
   }
 
   card(k, live, i, w) {
-    const c = this.byId[live.id], on = i === this.sel;
+    const c = this.byId[live.id], on = i === this.sel, move = Boolean(c?.hasMove);
     const branch = live.branch ?? (c?.facts.find((f) => f.startsWith("⎇")) ?? "").replace("⎇ ", "");
     const folder = c?.facts[0] ?? "";
-    const top = (c?.top ?? []).slice(0, 2);
-    return v_flex().w(w).h(CARD_H).flex_none().px(14).py(12).gap(6).rounded(10).overflow_hidden()
-      .bg(on ? k.selBg : k.card ?? k.bg)
-      .border(on ? 2 : 1).border_color(on ? k.focus : c?.hasMove ? k.moveLine ?? k.move : k.border)
-      .when(Boolean(c?.hasMove) && !on, (el) => el.border_l(3).border_color(k.move))
+    const top = (c?.top ?? []).slice(0, 2), more = (c?.rows.length ?? 0) - top.length;
+    return v_flex().w(w).h(CARD_H).flex_none().px(16).pt(14).pb(12).rounded(14).overflow_hidden().relative()
+      // A faint lit top edge: on a near-black pane a shadow alone barely reads, so the card catches light.
+      .child(div().absolute().top(0).left(14).right(14).h(1).bg(on ? tint(k.focus, 0x66, k.line) : "#ffffff14"))
+      .bg(on ? k.card2 : k.card).when(Boolean(c?.loose), (el) => el.bg(k.bg).border_dashed())
+      .border(on ? 2 : 1).border_color(on ? k.focus : move ? k.moveLine : k.line)
+      .when(on, (el) => el.shadow_xl()).when(!on, (el) => el.shadow_md())
       .child(h_flex().gap(8).items_center()
-        .child(this.dot(k, c, live))
-        .child(div().flex_1().min_w(0).truncate().text_size(T.body).font_weight(live.active ? 700 : 600).text_color(k.ink).child(live.name))
-        .when(live.active, (el) => el.child(div().flex_none().text_size(T.cap).text_color(k.focus).child("here"))))
-      .child(div().truncate().text_size(T.cap).text_color(k.muted).child([folder, branch && `⎇ ${branch}`].filter(Boolean).join("  ·  ")))
-      .child(this.counts(k, c, live))
-      .when(top.length > 0, (el) => el.child(v_flex().mt(2).pt(6).gap(4).border_t(1).border_color(k.border).min_w(0)
+        .child(div().flex_1().min_w(0).truncate().font_family(k.display).text_size(T.name).font_weight(k.headWeight).text_color(k.head)
+          .child(k.caps ? live.name.toUpperCase() : live.name))
+        .when(live.active, (el) => el.child(div().flex_none().px(7).py(1).rounded(999).bg(tint(k.focus, 0x26, k.selBg)).text_size(T.tiny).font_weight(700).text_color(k.focus).child("HERE"))))
+      .child(div().mt(3).truncate().text_size(T.cap).text_color(k.muted).child([folder, branch && `⎇ ${branch}`].filter(Boolean).join("  ·  ")))
+      .child(div().mt(8).child(this.counts(k, c, live)))
+      .when(top.length > 0, (el) => el.child(v_flex().mt(10).pt(10).gap(8).border_t(1).border_color(k.border).min_w(0)
         .children(top.map((r) => this.agent(k, r)))))
-      .when((c?.rows.length ?? 0) > top.length, (el) => el.child(div().text_size(T.cap).text_color(k.idle).child(`+${c.rows.length - top.length} more`)));
+      .child(div().flex_1())
+      .when(more > 0, (el) => el.child(div().text_size(T.tiny).text_color(k.idle).child(`${more} more agent${more > 1 ? "s" : ""}`)));
   }
 
   key(e, list, cx) {
@@ -151,11 +172,13 @@ export default class Stage extends View {
         if (Math.abs(nw - this.width) > 2) { this.width = nw; cx.notify(); }
       })
       .on_key_down((e, cx) => this.key(e, list, cx));
-    const header = h_flex().px(16).py(12).gap(8).items_center().border_b(1).border_color(k.border)
-      .child(div().text_size(T.body).font_weight(700).text_color(k.ink).child("Stage"))
-      .child(div().text_size(T.cap).text_color(k.muted).child(`${list.length} spaces`))
+    const header = h_flex().px(18).pt(16).pb(12).gap(10).items_end()
+      .child(div().font_family(k.display).text_size(T.name + 2).font_weight(k.headWeight).text_color(k.head).child(k.caps ? "STAGE" : "Stage"))
+      .child(div().pb(2).text_size(T.cap).text_color(k.muted).child(`${list.length} spaces`))
       .child(div().flex_1())
-      .when(this.lane > 0, (el) => el.child(div().text_size(T.cap).font_weight(600).text_color(k.move).child(`${this.lane} waiting on you`)));
+      .when(this.lane > 0, (el) => el.child(h_flex().mb(1).gap(6).items_center().px(9).py(3).rounded(999).bg(tint(k.move, 0x22, k.moveBg))
+        .child(div().size(6).rounded(3).bg(k.move))
+        .child(div().text_size(T.cap).font_weight(700).text_color(k.move).child(`${this.lane} waiting on you`))));
     const grid = v_virtual_list("stage-grid", nRows, ROW_H, (r) => String(r), (range) => {
       const out = [];
       for (let r = range.start; r < range.end; r++) {
@@ -170,7 +193,7 @@ export default class Stage extends View {
       .on_mouse_down("left", (e) => { const z = Number(settings().zoom) || 1; this.downX = (e.local_position?.x ?? e.position?.x ?? 0) / z; })
       .child(grid)
       .child(Scrollbar.vertical("stage-grid").absolute().inset_0());
-    const foot = div().px(16).py(8).border_t(1).border_color(k.border).text_size(T.cap).text_color(k.muted)
+    const foot = div().px(18).py(8).border_t(1).border_color(k.border).text_size(T.tiny).text_color(k.idle)
       .child(this.error ? `Couldn't read agents: ${this.error}` : !this.loaded ? "Reading agents…" : "h j k l move · ↵ go to space · q close");
     return root.child(header).child(body).child(foot);
   }
