@@ -7,10 +7,12 @@ export const THEMES = ["mission", "default", "noir"];
 // Heel's Mission Control palette (~/repos/herdr-mobile, Skins/MissionSkin.swift): graphite surfaces, one
 // mint accent, amber only for what needs you. Fixed, like Heel; it doesn't follow the Herdr theme.
 export const MISSION = {
-  bg: "#101412", surface: "#1A201C", raised: "#2B342C", field: "#242D26", rule: "#303A34", ruleSoft: "#303A3480",
+  // Stage draws no ground of its own: the pane frame (and the layout's background) shows through, as it does
+  // behind your terminals. Surfaces are translucent so the background reads through them too.
+  bg: "#101412", surface: "#1A201CB8", raised: "#2B342C", field: "#242D26C8", rule: "#303A34A0", ruleSoft: "#303A3470",
   ink: "#ECF0EB", ink2: "#94A198", ink3: "#79867C",
   accent: "#B0EFB5", onAccent: "#15261A", amber: "#E8BC7F",
-  done: "#8FB894", idle: "#7A867C", pulse: "#222A25",
+  done: "#8FB894", idle: "#7A867C", pulse: "#B0EFB518",
   sans: null, mono: "SF Mono",
 };
 

@@ -276,7 +276,7 @@ export default class Stage extends View {
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
     // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
     this.font = String(settings().font || settings().font_family || K.mono);
-    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(K.bg).text_color(K.ink).font_family(this.font)
+    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().text_color(K.ink).font_family(this.font)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {
         const z = Number(settings().zoom) || 1, nw = size.width / z;
