@@ -11,6 +11,8 @@ export const MISSION = {
   // behind your terminals. Surfaces are translucent so the background reads through them too.
   bg: "#101412", surface: "#1A201CE6", raised: "#2B342C", field: "#242D26E6", rule: "#303A34A0", ruleSoft: "#303A3470",
   ink: "#ECF0EB", ink2: "#94A198", ink3: "#79867C",
+  // Bubble titles: warm sand, picking up the amber city lights against the teal.
+  title: "#E8CC9A",
   accent: "#B0EFB5", onAccent: "#15261A",
   // Needs-you is the Herdr theme's accent (teal in matrix), not amber: the skin passes it in as `need`.
   need: "#5EEAD4",

@@ -171,17 +171,16 @@ export default class Stage extends View {
   }
 
   // One item as a message bubble: title with its age on the right, then up to three lines of message.
-  // An ask is the same bubble with its message in full ink and a thin accent bar.
+  // An ask is the same bubble with its message in full ink.
   bubble(i, w) {
     const need = Boolean(i.move);
     const title = i.kind === "agent" ? i.title || i.label : i.label;
     return v_flex().w(w).h(ROW.bubble).flex_none().px(12).py(10).gap(4).overflow_hidden()
       .rounded_tl(16).rounded_tr(16).rounded_br(16).rounded_bl(6).bg(K.surface)
       .child(h_flex().flex_none().h(19).gap(8).items_center().min_w(0)
-        .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.ink).child(title || ""))
+        .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.title).child(title || ""))
         .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
-      // An ask reads in full-strength ink with a thin accent bar; other messages are secondary ink.
-      .when(need, (el) => el.border_l(2).border_color(this.need))
+      // An ask reads in full-strength ink; other messages are secondary ink. No edge bar (the user found it ugly).
       .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.ink : K.ink2).child(this.message(i)));
   }
 
