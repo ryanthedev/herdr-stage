@@ -83,6 +83,8 @@ export default class Stage extends View {
       try {
         const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
         if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
+        // {"parents": {"child space name": "parent space name"}}: nesting without labelling real terminals.
+        if (seam?.parents && typeof seam.parents === "object") { this.seamParents = seam.parents; this.reorder(); cx.notify(); }
       } catch {}
     });
   }
@@ -126,6 +128,8 @@ export default class Stage extends View {
     const agentSpace = Object.fromEntries(agents().map((a) => [a.address, a.space]));
     const where = (t) => labelsOf(t)["herdr.space"] ?? agentSpace[t.address] ?? null;
     this.parent = parentsOf(terminals().filter((t) => t.state === "live"), sp, where);
+    const idOf = (name) => sp.find((s) => s.name === name)?.id;
+    for (const [child, par] of Object.entries(this.seamParents ?? {})) if (idOf(child) && idOf(par)) this.parent[idOf(child)] = idOf(par);
     this.entries = families(rank(items, this.store, now), this.parent);
   }
 

@@ -1,5 +1,11 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09: subspaces
+- User kept nesting as is: child spaces are full indented rows with a connector and "↳ parent"; declared only
+  by the terminal label `stage.parent=<space>` (no key in Stage). Heel's leader is asking the same question.
+- Test seam: stage-test.json {"parents": {"child name": "parent name"}} fakes nesting in a test home without
+  labelling real terminals (labels live in the shared herdr-core).
+
 ## 2026-11-09: Stage follows Heel's overview (user: "more of that route")
 - Look and anatomy come from Heel (~/repos/herdr-mobile, .design-loop/heel-bulky/r0/directions-v4.html,
   Skins/MissionSkin.swift): graphite ground, mint for working, amber only for needs-you; rows on the ground
