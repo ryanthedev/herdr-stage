@@ -11,8 +11,7 @@ export const tierFor = (width) => TIERS.find(([, min]) => width >= min)[0];
 
 // Row geometry (px, before the app's zoom), shared by the skin and tests.
 export const ROW = { padY: 12, head: 22, meta: 16, gap: 8, bubble: 96, xs: 40 }; // bubble: title + 3 message lines
-export const BUBBLE_GAP = 8, SIDE = 16;
-export const bubbleW = (width) => (width >= 900 ? 260 : 224);
+export const BUBBLE_GAP = 8, SIDE = 16, BUBBLE_MIN = 280;
 
 // The items of a space in the order they matter: asks, working agents, other agents, dashboards,
 // processes, shells. card: the view-model card (rows = agents, others = non-agent panes).
@@ -23,11 +22,18 @@ export function itemsOf(card) {
   return [...agents, ...others].sort((a, b) => a.rank - b.rank);
 }
 
-// How many bubbles fit across a row at this width.
+// How many bubbles fit across a row: as many of at least BUBBLE_MIN as the width allows.
 export function fitFor(tier, width) {
   if (tier === "s") return 1;
   if (tier !== "wide") return 0;
-  return Math.max(1, Math.floor((width - 2 * SIDE + BUBBLE_GAP) / (bubbleW(width) + BUBBLE_GAP)));
+  return Math.max(1, Math.floor((width - 2 * SIDE + BUBBLE_GAP) / (BUBBLE_MIN + BUBBLE_GAP)));
+}
+
+// The width of one bubble slot: the row split evenly between the bubbles that fit, so bubbles fill the
+// row and line up from row to row. `indent` is a nested row's extra left inset.
+export function slotW(tier, width, indent = 0) {
+  const n = Math.max(1, fitFor(tier, width)), avail = width - 2 * SIDE - indent;
+  return Math.floor((avail - BUBBLE_GAP * (n - 1)) / n);
 }
 
 // What a row shows: { bubbles, more } — `more` counts the items left out.

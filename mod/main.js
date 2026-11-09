@@ -25,7 +25,7 @@ import { theme, run, spaces, panes, focused, nextCommand, settings, terminals, a
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
-import { tierFor, rowView, rowHeight, statusOf, bubbleW, ROW, SIDE, BUBBLE_GAP } from "./core/rows.js";
+import { tierFor, rowView, rowHeight, statusOf, slotW, ROW, SIDE, BUBBLE_GAP } from "./core/rows.js";
 import { track, prune, rank } from "./core/order.js";
 import { parentsOf, families, labelsOf } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
@@ -148,13 +148,13 @@ export default class Stage extends View {
   }
 
   // The mono line under the name: branch, folder, nested-under, and the rest as labelled counts.
-  metaLine(e, c, live) {
+  metaLine(e, c, live, more = 0) {
     const branch = live.branch ?? (c?.facts.find((f) => f.startsWith("⎇")) ?? "").replace("⎇ ", "");
     const parentName = e.parent ? spaces().find((s) => s.id === e.parent)?.name : null;
     const n = (v, one, many) => (v ? `${v} ${v > 1 ? many : one}` : null);
     const parts = [parentName && `↳ ${parentName}`, branch && `⎇ ${branch}`, c?.facts[0],
       n(c?.counts.idle, "idle", "idle"), n(c?.counts.mods, "dashboard", "dashboards"), n(c?.counts.shells, "shell", "shells"), n(c?.counts.procs, "process", "processes"),
-      e.kids ? `${e.kids} nested` : null];
+      e.kids ? `${e.kids} nested` : null, more ? `+${more} more` : null];
     return div().truncate().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(parts.filter(Boolean).join(" · "));
   }
 
@@ -195,7 +195,7 @@ export default class Stage extends View {
   // `on`: the keyboard selection, shown only while this pane has the keyboard, as a slow pulse behind the row.
   row(e, on, tier, w) {
     const live = e.space, c = this.byId[live.id], v = rowView(c, tier, w);
-    const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = tier === "s" ? w - 2 * SIDE - indent : bubbleW(w);
+    const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = slotW(tier, w, indent);
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
       .child(this.status(c, live))
@@ -207,10 +207,9 @@ export default class Stage extends View {
         .child(div().absolute().left(SIDE + indent - 10).top(22).w(6).h(1).bg(K.rule)))
       .child(head);
     if (tier === "xs") return body;
-    return body.child(div().mt(2).child(this.metaLine(e, c, live)))
+    return body.child(div().mt(2).child(this.metaLine(e, c, live, v.more)))
       .when(v.bubbles.length > 0, (el) => el.child(h_flex().mt(ROW.gap).gap(BUBBLE_GAP).min_w(0).overflow_hidden()
-        .children([...v.bubbles.map((i) => this.bubble(i, bw)),
-          ...(v.more > 0 ? [div().flex_none().self_center().px(4).font_family(this.font).text_size(T.meta).text_color(K.ink3).child(`+${v.more}`)] : [])])));
+        .children(v.bubbles.map((i) => this.bubble(i, bw)))));
   }
 
   key(e, list, rows, cx) {

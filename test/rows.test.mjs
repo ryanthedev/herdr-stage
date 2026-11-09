@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tierFor, itemsOf, rowView, rowHeight, fitFor, statusOf, ROW } from "../core/rows.js";
+import { tierFor, itemsOf, rowView, rowHeight, fitFor, slotW, statusOf, ROW } from "../core/rows.js";
 
 const card = {
   counts: { move: 1, working: 1 },
@@ -19,8 +19,9 @@ test("items: asks, working, other agents, dashboards, processes, shells", () => 
 
 test("bubbles: as many as fit, the rest counted; one when narrow; none when tiny", () => {
   assert.equal(fitFor("wide", 1200), 4);
-  assert.equal(fitFor("wide", 500), 2);
-  const v = rowView(card, "wide", 500);
+  assert.equal(fitFor("wide", 640), 2);
+  assert.equal(fitFor("wide", 500), 1);
+  const v = rowView(card, "wide", 640);
   assert.deepEqual(v.bubbles.map((i) => i.label), ["asker", "busy"]);
   assert.equal(v.more, 3);
   assert.deepEqual(rowView(card, "s", 350).bubbles.map((i) => i.label), ["asker"]);
@@ -39,4 +40,11 @@ test("status word, most urgent first", () => {
   assert.equal(statusOf(empty, "done"), "done");
   assert.equal(statusOf({ counts: {}, rows: [], others: [{ kind: "shell" }] }), "idle");
   assert.equal(statusOf(empty), "empty");
+});
+
+test("slots: bubbles split the row evenly and fill it", () => {
+  const w = 1000, n = fitFor("wide", w), s = slotW("wide", w);
+  assert.equal(n, 3);
+  assert.ok(s >= 280 && n * s + 8 * (n - 1) <= w - 32 && n * s + 8 * (n - 1) > w - 32 - n);
+  assert.equal(slotW("s", 350), 350 - 32);
 });
