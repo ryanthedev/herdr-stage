@@ -1,51 +1,56 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { nextGrid, colsFor, rowOf, rowsFor } from "../core/grid.js";
+import { nextGrid, colsFor, layoutRows, rowOf } from "../core/grid.js";
 
-test("grid: h/l move along the row and clamp at the ends", () => {
-  assert.equal(nextGrid(1, "l", 5, 2).sel, 2);
-  assert.equal(nextGrid(4, "l", 5, 2).sel, 4);
-  assert.equal(nextGrid(0, "h", 5, 2).sel, 0);
-  assert.equal(nextGrid(3, "ArrowLeft", 5, 2).sel, 2);
+const flat = (n, cols) => layoutRows(Array(n).fill(0).map((_, i) => (i ? 1 : 0)), cols); // one family: plain grid
+
+test("rows: a plain list fills rows of cols", () => {
+  assert.deepEqual(flat(5, 2), [[0, 1], [2, 3], [4]]);
 });
 
-test("grid: j/k move a whole row", () => {
-  assert.equal(nextGrid(0, "j", 6, 3).sel, 3);
-  assert.equal(nextGrid(4, "k", 6, 3).sel, 1);
-  assert.equal(nextGrid(1, "k", 6, 3).sel, 1);
-  assert.equal(nextGrid(4, "j", 6, 3).sel, 4);
+test("rows: every top-level space starts a new row; its children follow it", () => {
+  // A(0) a1(1) a2(1) B(0) C(0) c1(1)
+  assert.deepEqual(layoutRows([0, 1, 1, 0, 0, 1], 2), [[0, 1], [2], [3], [4, 5]]);
+  assert.deepEqual(layoutRows([0, 0, 0], 3), [[0], [1], [2]]);
 });
 
-test("grid: j into a short last row lands on its last card", () => {
-  // 3 columns, 5 cards: row 0 = 0 1 2, row 1 = 3 4. j from 2 goes to 4, not nowhere.
-  assert.equal(nextGrid(2, "j", 5, 3).sel, 4);
-  assert.equal(nextGrid(0, "j", 5, 3).sel, 3);
+test("grid: h/l step through cards in order and clamp", () => {
+  const rows = flat(5, 2);
+  assert.equal(nextGrid(1, "l", rows).sel, 2);
+  assert.equal(nextGrid(4, "l", rows).sel, 4);
+  assert.equal(nextGrid(0, "h", rows).sel, 0);
 });
 
-test("grid: with one column it behaves like the old list", () => {
-  assert.equal(nextGrid(0, "j", 3, 1).sel, 1);
-  assert.equal(nextGrid(2, "j", 3, 1).sel, 2);
-  assert.equal(nextGrid(2, "k", 3, 1).sel, 1);
+test("grid: j/k keep the column, landing on a short row's last card", () => {
+  const rows = flat(5, 3); // [0 1 2] [3 4]
+  assert.equal(nextGrid(0, "j", rows).sel, 3);
+  assert.equal(nextGrid(2, "j", rows).sel, 4);
+  assert.equal(nextGrid(4, "k", rows).sel, 1);
+  assert.equal(nextGrid(4, "j", rows).sel, 4);
+  assert.equal(nextGrid(1, "k", rows).sel, 1);
 });
 
-test("grid: g / G jump to the ends, enter opens, q closes", () => {
-  assert.equal(nextGrid(2, "g", 5, 2).sel, 0);
-  assert.equal(nextGrid(0, "G", 5, 2).sel, 4);
-  assert.equal(nextGrid(0, "g", 5, 2, true).sel, 4);
-  assert.deepEqual(nextGrid(1, "enter", 3, 2).effect, { open: 1 });
-  assert.equal(nextGrid(0, "enter", 0, 2).effect, null);
-  assert.deepEqual(nextGrid(1, "q", 3, 2).effect, { close: true });
+test("grid: j/k across family rows", () => {
+  const rows = layoutRows([0, 1, 1, 0, 0, 1], 2); // [0 1] [2] [3] [4 5]
+  assert.equal(nextGrid(1, "j", rows).sel, 2);
+  assert.equal(nextGrid(2, "j", rows).sel, 3);
+  assert.equal(nextGrid(3, "j", rows).sel, 4);
+  assert.equal(nextGrid(5, "k", rows).sel, 3);
 });
 
-test("grid: a selection past a shrunken list is pulled back", () => {
-  assert.equal(nextGrid(7, "x", 3, 2).sel, 2);
+test("grid: g / G, enter, q, and a shrunken list", () => {
+  const rows = flat(5, 2);
+  assert.equal(nextGrid(2, "g", rows).sel, 0);
+  assert.equal(nextGrid(0, "G", rows).sel, 4);
+  assert.equal(nextGrid(0, "g", rows, true).sel, 4);
+  assert.deepEqual(nextGrid(1, "enter", rows).effect, { open: 1 });
+  assert.equal(nextGrid(0, "enter", []).effect, null);
+  assert.deepEqual(nextGrid(1, "q", rows).effect, { close: true });
+  assert.equal(nextGrid(7, "x", flat(3, 2)).sel, 2);
 });
 
-test("grid: columns from width, rows from count", () => {
+test("grid: columns from width, row of a card", () => {
   assert.equal(colsFor(600, 260, 10, 16), 2);
   assert.equal(colsFor(200, 260, 10, 16), 1);
-  assert.equal(colsFor(1000, 260, 10, 16), 3);
-  assert.equal(rowOf(5, 2), 2);
-  assert.equal(rowsFor(5, 2), 3);
-  assert.equal(rowsFor(0, 2), 0);
+  assert.equal(rowOf(3, [[0, 1], [2], [3]]), 2);
 });
