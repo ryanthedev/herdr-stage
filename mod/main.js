@@ -72,7 +72,7 @@ export default class Stage extends View {
       for (;;) {
         const c = await nextCommand();
         if (c !== "focus") continue;
-        cx.timer.after(60, () => { if (panes().find((p) => p.focused)?.mod === MOD) this.handle.focus(); });
+        cx.timer.after(60, () => { if (panes().find((p) => p.focused)?.mod === MOD) this.handle.focus(); cx.notify(); });
       }
     });
     this.refresh(cx);
@@ -158,22 +158,25 @@ export default class Stage extends View {
     return div().truncate().font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(parts.filter(Boolean).join(" · "));
   }
 
-  // One item as a message bubble: [tab chip] name · time / title / message. Needs-you bubbles are amber.
+  // What a bubble says, up to three lines: the ask, else the agent's recap or last message, else what it is.
+  message(i) {
+    if (i.move) return i.move;
+    const flat = (s) => String(s ?? "").replace(/\*\*|__|`|^#+\s*/gm, "").replace(/\s*\n+\s*/g, " ").trim();
+    if (i.kind === "agent") return flat(i.recap) || flat(i.text).slice(0, 320) || i.line || "";
+    return i.kind === "mod" ? "dashboard" : i.detail ?? i.kind;
+  }
+
+  // One item as a message bubble: title with its age on the right, then up to three lines of message.
+  // An ask is the same bubble with its message in amber: no brown fill, no frame.
   bubble(i, w) {
     const need = Boolean(i.move);
-    const name = i.kind === "agent" ? (i.label !== i.title ? i.label : i.addr) : i.kind === "mod" ? "dashboard" : i.kind;
     const title = i.kind === "agent" ? i.title || i.label : i.label;
-    const msg = i.move ?? i.line ?? (i.kind === "mod" ? i.detail : i.detail ?? "");
-    return v_flex().w(w).h(ROW.bubble).flex_none().px(11).py(9).gap(3).overflow_hidden()
-      .rounded_tl(16).rounded_tr(16).rounded_br(16).rounded_bl(6)
-      .bg(need ? K.needBg : K.surface).when(need, (el) => el.border(1).border_color(K.needLine))
-      .child(h_flex().flex_none().h(16).gap(6).items_center().min_w(0).font_family(K.mono).text_size(T.meta).text_color(K.ink3)
-        // Unnamed tabs are just their position ("1"): only a named tab earns a chip.
-        .when(Boolean(i.tab) && !/^\d+$/.test(String(i.tab)), (el) => el.child(div().flex_none().px(6).py(1).rounded(5).bg(K.field).text_color(K.ink2).child(String(i.tab))))
-        .child(div().min_w(0).truncate().child(name))
-        .when(Boolean(i.at), (el) => el.child(div().flex_none().child(`· ${ago(i.at)}`))))
-      .child(div().flex_none().h(19).truncate().text_size(T.title).font_weight(600).text_color(K.ink).child(title || ""))
-      .child(div().flex_none().h(17).truncate().text_size(T.msg).text_color(need ? K.amber : K.ink2).child(msg || ""));
+    return v_flex().w(w).h(ROW.bubble).flex_none().px(12).py(10).gap(4).overflow_hidden()
+      .rounded_tl(16).rounded_tr(16).rounded_br(16).rounded_bl(6).bg(K.surface)
+      .child(h_flex().flex_none().h(19).gap(8).items_center().min_w(0)
+        .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.ink).child(title || ""))
+        .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
+      .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.amber : K.ink2).child(this.message(i)));
   }
 
   // The name, with the characters a search matched drawn in the accent.
@@ -189,17 +192,17 @@ export default class Stage extends View {
   }
 
   // One space as a row: header line, meta line, bubbles. No card: rows sit on the ground, split by a hairline.
-  // `on`: the keyboard selection (a mint edge and a faint lift, nothing louder).
+  // `on`: the keyboard selection, shown only while this pane has the keyboard, as a slow pulse behind the row.
   row(e, on, tier, w) {
     const live = e.space, c = this.byId[live.id], v = rowView(c, tier, w);
     const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = tier === "s" ? w - 2 * SIDE - indent : bubbleW(w);
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
       .child(this.status(c, live))
-      .when(live.active, (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.accent).child("here")))
+      .when(live.active, (el) => el.child(div().flex_none().font_family(K.mono).text_size(T.meta).text_color(K.accent).child("active")))
       .child(div().flex_1());
     const body = v_flex().h(rowHeight(c, tier)).w_full().pl(SIDE + indent).pr(SIDE).justify_center().relative()
-      .when(on, (el) => el.bg(K.selBg).child(div().absolute().left(0).top(8).bottom(8).w(3).rounded(2).bg(K.accent)))
+      .when(on, (el) => el.child(div().absolute().inset_0().bg(K.pulse).loop("opacity", { from: 0.25, to: 1, period: 1800 })))
       .when(Boolean(e.depth), (el) => el.child(div().absolute().left(SIDE + indent - 10).top(0).h(22).w(1).bg(K.rule))
         .child(div().absolute().left(SIDE + indent - 10).top(22).w(6).h(1).bg(K.rule)))
       .child(head);
@@ -264,6 +267,9 @@ export default class Stage extends View {
     const at = this.selId ? list.findIndex((e) => e.id === this.selId) : -1;
     this.sel = this.find ? this.find.sel : at >= 0 ? at : Math.max(0, Math.min(this.sel, list.length - 1));
     const rows = list.map((_, i) => [i]);
+    // Highlight only while this pane has the keyboard; otherwise nothing is selected-looking.
+    // Reading panes() here also redraws the pane when focus moves elsewhere (it is live data).
+    const active = this.handle.is_focused() && panes().find((p) => p.focused)?.mod === MOD;
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
     const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(K.bg).text_color(K.ink)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
@@ -276,7 +282,7 @@ export default class Stage extends View {
     const vlist = v_virtual_list("stage-rows", list.length, heights, (i) => list[i].id, (range) => {
       const out = [];
       for (let i = range.start; i < range.end; i++)
-        out.push(v_flex().h(heights[i]).child(this.row(list[i], i === this.sel, tier, w)).child(div().h(1).mx(SIDE).bg(K.ruleSoft)));
+        out.push(v_flex().h(heights[i]).child(this.row(list[i], active && i === this.sel, tier, w)).child(div().h(1).mx(SIDE).bg(K.ruleSoft)));
       return out;
     }).track_scroll(this.scroll).size_full()
       .on_item_click((id, cx) => {

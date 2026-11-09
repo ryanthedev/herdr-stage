@@ -9,8 +9,8 @@ export const THEMES = ["mission", "default", "noir"];
 export const MISSION = {
   bg: "#101412", surface: "#1A201C", raised: "#2B342C", field: "#242D26", rule: "#303A34", ruleSoft: "#303A3480",
   ink: "#ECF0EB", ink2: "#94A198", ink3: "#79867C",
-  accent: "#B0EFB5", onAccent: "#15261A", amber: "#E8BC7F", needBg: "#2A2619", needLine: "#E8BC7F59",
-  done: "#8FB894", idle: "#7A867C", selBg: "#161C18",
+  accent: "#B0EFB5", onAccent: "#15261A", amber: "#E8BC7F",
+  done: "#8FB894", idle: "#7A867C", pulse: "#222A25",
   sans: null, mono: "SF Mono",
 };
 
