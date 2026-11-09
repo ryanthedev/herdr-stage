@@ -30,4 +30,4 @@ so the adapter reads small transcript tails, one at a time, only for agents that
 | …and what to start. | |
 
 - `n` new space: `core/open.js` (machine, folder, program; tested) and the scan it runs on the machine.
-- `?` key list: copied in from herdr-help (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
+- `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
