@@ -1,5 +1,22 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09 (afternoon): open a space on any machine
+- Stage `n` (or the "+ New space" button by the field) opens a picker in place of the list: machine
+  (`hc machine ls`, remotes first, offline ones can't be picked) -> folder -> Claude Code / Codex / Shell.
+  Enter runs space.new {machine, folder, argv}. Logic: core/open.js (tests: test/open.test.mjs); mod: main.js
+  startOpen/openView/openKey.
+- Folders come from a sh scan on that machine (exec {on}): your spaces' folders there first ("has a space"),
+  then git repos to depth 4 (hidden folders skipped except ~/.config), then home's own folders. Tab lists a
+  folder's subfolders; typing ~/x or /x offers "use this path" (made with mkdir -p first). Programs offered
+  are the ones `$SHELL -lc command -v` finds there.
+- Scan speed: ~3s on ska warm; the very first run took 45s (cold disk). Folders of existing spaces and typed
+  paths work while it scans.
+- Verified: all three steps render in an isolated window (seam {"open":{"step":"folder","machine":"ska"}}).
+  NOT verified: the final space.new (would create a space in the shared herdr-core, i.e. your real spaces)
+  and the key names Tab/Enter/Esc arrive as (no key automation allowed).
+- Test-home gotcha: seed shared.json with {"frame.welcomed":"finished"} or the welcome dialog covers the
+  window; and `mod.open` opens Stage as a floating overlay (close with overlay.close) when a pane exists.
+
 ## 2026-11-09 (midday): remote machines on the Stage
 - Remote machines now exist (`hc machine ls`: ska connected; vana being set up). spaces() gives each space
   `machine` (the machine's name, null = this computer). Stage draws a server-icon pill with that name, in the

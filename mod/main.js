@@ -21,7 +21,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { theme, layout, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome } from "herdr";
+import { theme, layout, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome, exec, hc } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
@@ -30,6 +30,7 @@ import { track, prune, rank } from "./core/order.js";
 import { parentsOf, families, labelsOf } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
 import { MISSION as K, machineColor } from "./themes.js";
+import { SCAN, LIST, parseScan, machineRows, folderRows, startRows, nextOpen } from "./core/open.js";
 
 const MOD = "stage";
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
@@ -83,6 +84,12 @@ export default class Stage extends View {
       try {
         const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
         if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
+        // {"open": {"step": "folder", "machine": "ska", "query": ""}}: the new-space picker at a step.
+        if (seam?.open) {
+          this.startOpen(cx);
+          Object.assign(this.open, seam.open);
+          if (seam.open.step !== "machine") this.scanFolders(seam.open.machine ?? null, cx);
+        }
         // {"parents": {"child space name": "parent space name"}}: nesting without labelling real terminals.
         if (seam?.parents && typeof seam.parents === "object") { this.seamParents = seam.parents; this.reorder(); cx.notify(); }
       } catch {}
@@ -246,7 +253,9 @@ export default class Stage extends View {
   }
 
   key(e, list, rows, cx) {
+    if (this.open) return this.openKey(e, cx);
     if (this.find) return this.findKey(e, list, cx);
+    if (e.key === "n" && !e.modifiers?.platform && !e.modifiers?.control) { this.startOpen(cx); cx.stop_propagation(); return cx.notify(); }
     if (e.key === "/") { this.find = { query: "", sel: 0 }; this.scroll.scroll_to_item(0); cx.stop_propagation(); return cx.notify(); }
     if (e.modifiers?.platform || e.modifiers?.control) return; // cmd-h/l etc. stay the app's
     const before = this.sel;
@@ -273,6 +282,134 @@ export default class Stage extends View {
     cx.stop_propagation(); cx.notify();
   }
 
+  // New space picker (n, or the + by the field): machine, then folder, then what to start. The lists and
+  // keys are core/open.js; here we read machines, scan folders on the chosen machine, and run space.new.
+  startOpen(cx) {
+    this.open = { step: "machine", query: "", sel: 0 };
+    this.find = null;
+    cx.spawn(async (cx) => {
+      try { this.openMachines = JSON.parse((await hc(["machine", "ls", "--json"])).stdout).machines ?? []; }
+      catch { this.openMachines = []; }
+      cx.notify();
+    });
+  }
+
+  // Folders your spaces on that machine already use (their folder and their terminals' folders).
+  spaceFolders(machine) {
+    const ps = panes(), out = [];
+    for (const s of spaces().filter((s) => (s.machine ?? null) === (machine ?? null))) {
+      const tabs = new Set(s.tabs.map((t) => t.id));
+      out.push(s.folder, ...ps.filter((p) => tabs.has(p.tab)).map((p) => p.cwd));
+    }
+    return [...new Set(out.filter((f) => typeof f === "string" && f.startsWith("/")))];
+  }
+
+  openRows() {
+    const o = this.open, sc = this.openScan;
+    if (o.step === "machine") return machineRows(this.openMachines ?? [], o.query);
+    if (o.step === "folder") return folderRows({ home: sc?.home, repos: sc?.repos ?? [], dirs: sc?.dirs ?? [], extra: sc?.extra ?? [], spaceFolders: this.spaceFolders(o.machine) }, o.query);
+    return startRows(sc?.status === "ready" ? sc.have : null, o.query);
+  }
+
+  scanFolders(machine, cx) {
+    const scan = { machine, status: "loading", home: null, have: [], dirs: [], extra: [] };
+    this.openScan = scan;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("sh", ["-c", SCAN], { on: machine, timeout: 60000 });
+        Object.assign(scan, parseScan(r.stdout), { status: "ready" });
+      } catch (e) { Object.assign(scan, { status: "error", error: String(e?.message ?? e) }); }
+      cx.notify();
+    });
+  }
+
+  expandFolder(path, cx) {
+    const scan = this.openScan;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("sh", ["-c", LIST, "sh", path], { on: scan?.machine, timeout: 15000 });
+        const kids = r.stdout.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("/"));
+        if (scan) scan.extra = [...new Set([...scan.extra, ...kids])];
+      } catch {}
+      cx.notify();
+    });
+  }
+
+  // A typed folder that isn't there yet is made first (space.new refuses a folder that doesn't exist).
+  createSpace(args, typed, cx) {
+    this.open = null;
+    cx.spawn(async (cx) => {
+      if (typed) { try { await exec("mkdir", ["-p", args.folder], { on: args.machine || null }); } catch {} }
+      run("space.new", args);
+      cx.notify();
+    });
+  }
+
+  openAct(r, rows, cx) {
+    const picked = rows[r.st.sel] ?? null, step = this.open.step;
+    this.open = r.st;
+    if (r.effect?.close) this.open = null;
+    if (r.effect && "scan" in r.effect) this.scanFolders(r.effect.scan, cx);
+    if (r.effect?.expand) this.expandFolder(r.effect.expand, cx);
+    if (r.effect?.create) this.createSpace(r.effect.create, this.openTyped, cx);
+    if (step === "folder" && r.st.step === "start") this.openTyped = picked?.kind === "typed";
+    cx.notify();
+  }
+
+  openKey(e, cx) {
+    if (e.modifiers?.platform) return;
+    const rows = this.openRows();
+    this.openAct(nextOpen(this.open, e.key, rows, { control: Boolean(e.modifiers?.control) }), rows, cx);
+    cx.stop_propagation();
+  }
+
+  // The picker, in place of the list: where you are in the three steps, then the rows (a window around
+  // the selection, so it never needs scrolling).
+  openView(w) {
+    const o = this.open, rows = this.openRows(), sc = this.openScan;
+    o.sel = Math.max(0, Math.min(o.sel, rows.length - 1));
+    const tilde = (p) => (sc?.home && p?.startsWith(sc.home) ? "~" + p.slice(sc.home.length) : p);
+    const where = o.machine ? this.machine(o.machine) : o.step !== "machine" ? h_flex().gap(6).items_center().text_size(T.status).text_color(K.ink2).child("\uf109").child("This computer") : null;
+    const ask = { machine: "Which machine?", folder: "Which folder?", start: "Start what?" }[o.step];
+    const head = v_flex().px(SIDE).pt(14).pb(10).gap(8)
+      .child(h_flex().gap(10).items_center().min_w(0)
+        .child(div().flex_none().text_size(T.name).font_weight(600).text_color(K.ink).child("New space"))
+        .when(Boolean(where), (el) => el.child(where))
+        .when(Boolean(o.folder) && o.step === "start", (el) => el.child(h_flex().min_w(0).h(22).px(8).gap(6).items_center().rounded(6).bg(K.chip)
+          .child(div().text_color(K.ink3).child("\uf07b")).child(div().min_w(0).truncate().text_size(T.status).text_color(K.ink2).child(tilde(o.folder))))))
+      .child(h_flex().gap(8).items_center().text_size(T.status).text_color(K.ink3)
+        .child(div().text_color(K.title).font_weight(600).child(ask))
+        .when(o.step === "folder" && sc?.status === "loading", (el) => el.child(div().loop("opacity", { from: 0.35, to: 1, period: 1400 }).child("scanning for repos…")))
+        .when(o.step === "folder" && sc?.status === "error", (el) => el.child(div().text_color(this.need).truncate().child(`couldn't scan: ${sc.error}`)))
+        .when(o.step === "machine" && !this.openMachines, (el) => el.child(div().child("reading machines…"))));
+    const N = 40, start = Math.max(0, Math.min(o.sel - Math.floor(N / 2), rows.length - N));
+    const tag = (text, color) => div().flex_none().px(6).h(18).flex().items_center().rounded(4).bg(color + "26").text_size(T.meta).text_color(color).child(text);
+    const line = (r, i) => {
+      const on = i === o.sel;
+      const el = h_flex().id(`open-${o.step}-${i}`).h(32).px(SIDE - 8).mx(8).gap(10).items_center().rounded(8).min_w(0).cursor_pointer()
+        .when(on, (el) => el.bg(K.raised)).when(!on, (el) => el.hover((s) => s.bg(K.surface)))
+        .on_click((_e, cx) => { o.sel = i; this.openAct(nextOpen(o, "enter", rows), rows, cx); });
+      if (o.step === "machine") return el
+        .child(r.machine ? this.machine(r.machine) : h_flex().gap(8).items_center().text_size(T.status + 1).text_color(K.ink).child(div().text_color(K.ink3).child("\uf109")).child(r.label))
+        .when(Boolean(r.note), (el) => el.child(div().text_size(T.meta).text_color(r.off ? this.need : K.ink3).child(r.note)));
+      if (o.step === "folder") return el
+        // A repo shows the git glyph; a plain folder the folder glyph; a typed path a plus.
+        .child(div().flex_none().w(14).text_color(r.kind === "typed" ? K.accent : r.kind === "repo" ? K.title : K.ink3)
+          .child(r.kind === "typed" ? "\uf067" : r.kind === "repo" ? "\ue725" : "\uf07b"))
+        .child(div().flex_1().min_w(0).truncate().font_family(this.font).text_size(T.status + 1).text_color(on ? K.ink : K.ink2).child(r.label))
+        .when(r.kind === "space", (el) => el.child(tag("has a space", K.accent)))
+        .when(r.kind === "typed", (el) => el.child(tag("use this path", K.accent)));
+      const glyph = { claude: "\uf4b8", codex: "\uf121", shell: "\uf489" }[r.id] ?? "\uf120";
+      return el.child(div().flex_none().w(16).text_color(K.title).child(glyph))
+        .child(div().flex_1().min_w(0).truncate().text_size(T.status + 1).text_color(on ? K.ink : K.ink2).child(r.label));
+    };
+    const list = v_flex().flex_1().min_h(0).overflow_hidden().gap(2)
+      .children(rows.slice(start, start + N).map((r, k) => line(r, start + k)))
+      .when(rows.length === 0, (el) => el.child(div().px(SIDE).py(8).text_size(T.status).text_color(K.ink3)
+        .child(o.step === "folder" ? "No match. Type a path starting with ~/ or / to use it." : "No match.")));
+    return v_flex().flex_1().min_h(0).w_full().child(head).child(list);
+  }
+
   // Search results: every card that matches all words, best first, flat (no families).
   found() {
     const all = this.shown(), byId = Object.fromEntries(all.map((e) => [e.id, e]));
@@ -293,7 +430,7 @@ export default class Stage extends View {
     const w = this.width || 640, tier = tierFor(w);
     // The space you're in is pinned at the top (not while searching), so the list leaves it out.
     const all = this.find ? this.found() : this.shown();
-    const pinned = this.find ? null : all.find((e) => e.space.active);
+    const pinned = this.find || this.open ? null : all.find((e) => e.space.active);
     const list = pinned ? all.filter((e) => e !== pinned) : all;
     if (this.find) this.find.sel = Math.max(0, Math.min(this.find.sel, list.length - 1));
     const at = this.selId ? list.findIndex((e) => e.id === this.selId) : -1;
@@ -331,7 +468,7 @@ export default class Stage extends View {
         if (i >= 0) { this.sel = i; this.selId = id; if (this.find) this.find.sel = i; }
         this.handle.focus(); cx.notify();
       });
-    const body = div().relative().flex_1().min_h(0).w_full()
+    const body = this.open ? this.openView(w) : div().relative().flex_1().min_h(0).w_full()
       .child(vlist)
       .child(Scrollbar.vertical("stage-rows").absolute().inset_0());
     // The bottom, as in Heel: a status line, then one rounded field to jump to a space (/ focuses it).
@@ -340,13 +477,23 @@ export default class Stage extends View {
       .child(div().flex_none().text_color(this.error ? this.need : K.accent).child("●"))
       .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
-      .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · q")));
+      .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.open ? (this.open.step === "folder" ? "↵ next · tab inside · esc back" : "↵ next · esc back")
+        : this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · n new · q")));
+    // While picking a new space the field is that step's filter; its placeholder says what to type.
+    const typing = this.open ?? this.find;
+    const hint = this.open ? { machine: "Type to filter machines", folder: "Filter, or type a path: ~/src/new", start: "Claude, Codex or a shell" }[this.open.step] : "";
     const field = h_flex().mx(12).mb(12).h(42).px(16).gap(10).items_center().rounded(21).bg(K.field)
-      .when(Boolean(this.find), (el) => el.border(1).border_color(K.accent))
-      .child(this.find
-        ? h_flex().flex_1().min_w(0).gap(1).items_center().text_size(T.field).text_color(K.ink).child(div().child(this.find.query)).child(div().w(2).h(16).bg(K.accent))
+      .when(Boolean(typing), (el) => el.border(1).border_color(K.accent))
+      .child(typing
+        ? h_flex().flex_1().min_w(0).gap(1).items_center().text_size(T.field).text_color(K.ink)
+          .when(!typing.query && Boolean(hint), (el) => el.child(div().w(2).h(16).bg(K.accent)).child(div().pl(4).truncate().text_color(K.ink3).child(hint)))
+          .when(Boolean(typing.query) || !hint, (el) => el.child(div().child(typing.query)).child(div().w(2).h(16).bg(K.accent)))
         : div().flex_1().min_w(0).truncate().text_size(T.field).text_color(K.ink3).child(tier === "xs" ? "Jump…" : "Jump to a space   /"))
-      .when(Boolean(this.find), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(`${list.length}`)));
+      .when(Boolean(this.find), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(`${list.length}`)))
+      // New space: the same picker as n.
+      .when(!typing, (el) => el.child(h_flex().id("stage-new").flex_none().h(28).px(10).gap(6).items_center().rounded(14).bg(K.chip).cursor_pointer()
+        .text_size(T.status).text_color(K.ink2).child(div().text_color(K.accent).child("\uf067")).when(tier !== "xs", (el) => el.child("New space"))
+        .on_click((_e, cx) => { this.startOpen(cx); this.handle.focus(); cx.notify(); })));
     const bottom = v_flex().pt(8).border_t(1).border_color(K.rule).child(status).child(field);
     return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom);
   }
