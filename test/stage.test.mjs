@@ -61,3 +61,33 @@ test("stage: non-agent panes are kept and counted, dashboards first", async () =
   assert.deepEqual(c.others.map((o) => o.label), ["herdr-md", "nvim", "zsh"]);
   assert.deepEqual([c.counts.mods, c.counts.procs, c.counts.shells], [1, 1, 1]);
 });
+
+test("lastUserPrompt: newest real prompt, skipping tool results, meta and commands", async () => {
+  const { lastUserPrompt } = await import("../core/transcript.js");
+  const L = (o) => JSON.stringify(o);
+  const tail = [
+    L({ type: "user", message: { content: "first ask" }, timestamp: "A" }),
+    L({ type: "user", message: { content: [{ type: "text", text: "make the bubbles opaque" }, { type: "image" }] }, timestamp: "B" }),
+    L({ type: "user", isMeta: true, message: { content: "[Image: original 10x10]" } }),
+    L({ type: "user", message: { content: [{ type: "tool_result", content: "x" }] } }),
+    L({ type: "user", message: { content: "<command-name>/clear</command-name>" } }),
+  ].join("\n");
+  assert.deepEqual(lastUserPrompt(tail), { text: "make the bubbles opaque", at: "B" });
+  const queued = tail + "\n" + L({ type: "queue-operation", operation: "enqueue", content: "also fix the width", timestamp: "C" });
+  assert.equal(lastUserPrompt(queued).text, "also fix the width");
+  assert.equal(lastUserPrompt(""), null);
+});
+
+test("titleOf: first sentence, lead-ins dropped, capitalised, capped", async () => {
+  const { titleOf } = await import("../core/transcript.js");
+  assert.equal(titleOf("ok, let's go different image. want more cityscape"), "Go different image");
+  assert.equal(titleOf("can you please go through the previous sessions and get caught up"), "Go through the previous sessions and get caught up");
+  assert.equal(titleOf("Keep the darker view.\nMake the bubbles opaque."), "Keep the darker view");
+  assert.equal(titleOf("ok"), null);
+  assert.ok(titleOf("x ".repeat(100), 20).endsWith("…"));
+});
+
+test("titleOf: 'need you to please' lead-in", async () => {
+  const { titleOf } = await import("../core/transcript.js");
+  assert.equal(titleOf("need you to please go through the sessions"), "Go through the sessions");
+});

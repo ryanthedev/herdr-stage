@@ -143,12 +143,16 @@ export default class Stage extends View {
   }
 
   // The status word after a space's name, with its dot: accent "needs you", mint "working", sage "done".
+  // A space's status as an icon chip, no words: Nerd Font glyphs (your font is a Nerd Font) in the status
+  // colour on a faint tint of it. Pink bell = needs you, mint spinner (pulsing) = working, sage check = done,
+  // grey moon = idle, grey ring = empty.
   status(c, live) {
     const word = statusOf(c, live.status);
-    const color = word === "needs you" ? this.need : word === "working" ? K.accent : word === "done" ? K.done : K.ink3;
-    return h_flex().flex_none().gap(5).items_center()
-      .child(word === "idle" || word === "empty" ? div().size(7).rounded(4).border(1).border_color(color) : div().size(7).rounded(4).bg(color))
-      .child(div().text_size(T.status).text_color(color).child(word));
+    const [glyph, color] = ({ "needs you": ["\uf0f3", this.need], working: ["\uf110", K.accent], done: ["\uf00c", K.done],
+      idle: ["\uf186", K.ink3], empty: ["\uf10c", K.ink3] })[word] ?? ["\uf10c", K.ink3];
+    const icon = div().text_color(color).child(glyph);
+    return h_flex().flex_none().h(ROW.meta).w(26).justify_center().items_center().rounded(5).bg(color + "26")
+      .child(word === "working" ? icon.loop("opacity", { from: 0.35, to: 1, period: 1400 }) : icon);
   }
 
   // The line under the name: where the space lives as two chips (branch, folder), then nested-under and the
@@ -158,6 +162,7 @@ export default class Stage extends View {
     const parentName = e.parent ? spaces().find((s) => s.id === e.parent)?.name : null;
     const n = (v, one, many) => (v ? `${v} ${v > 1 ? many : one}` : null);
     const folder = c?.facts[0] && !c.facts[0].startsWith("⎇") ? c.facts[0] : null;
+    const folderName = folder ? folder.split("/").filter(Boolean).pop() || folder : null;
     const chip = (glyph, text) => h_flex().flex_none().h(ROW.meta).px(7).gap(5).items_center().rounded(5).bg(K.chip)
       .child(div().text_color(K.ink3).child(glyph))
       .child(div().max_w(220).truncate().text_color(K.ink2).child(text));
@@ -165,8 +170,10 @@ export default class Stage extends View {
       n(c?.counts.idle, "idle", "idle"), n(c?.counts.mods, "dashboard", "dashboards"), n(c?.counts.shells, "shell", "shells"), n(c?.counts.procs, "process", "processes"),
       e.kids ? `${e.kids} nested` : null, more ? `+${more} more` : null].filter(Boolean);
     return h_flex().h(ROW.meta).gap(6).items_center().min_w(0).overflow_hidden().font_family(this.font).text_size(T.meta)
-      .when(Boolean(branch), (el) => el.child(chip("⎇", branch)))
-      .when(Boolean(folder), (el) => el.child(chip("▱", folder.split("/").filter(Boolean).pop() || folder)))
+      .child(this.status(c, live))
+      .when(Boolean(branch), (el) => el.child(chip("\ue725", branch)))
+      // The folder chip only when it says something the name doesn't.
+      .when(Boolean(folderName) && folderName !== live.name, (el) => el.child(chip("\uf07b", folderName)))
       .when(rest.length > 0, (el) => el.child(div().flex_1().min_w(0).truncate().pl(2).text_color(K.ink3).child(rest.join(" · "))));
   }
 
@@ -211,8 +218,9 @@ export default class Stage extends View {
     const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = slotW(tier, w, indent);
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
-      .child(this.status(c, live))
-      .when(live.active, (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.accent).child("active")))
+      // Too narrow for the chip line (xs): the status icon sits after the name instead.
+      .when(tier === "xs", (el) => el.child(this.status(c, live)))
+
       .child(div().flex_1());
     const body = v_flex().h(rowHeight(c, tier)).w_full().pl(SIDE + indent).pr(SIDE).justify_center().relative()
       .when(on, (el) => el.child(div().absolute().inset_0().bg(K.pulse).loop("opacity", { from: 0.25, to: 1, period: 1800 })))

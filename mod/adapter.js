@@ -2,7 +2,7 @@
 // plain input core/stage.js expects. The only file here that talks to Herdr.
 import { spaces, agents, panes, terminals, exec, hc, readTextFile, home } from "herdr";
 import { extractAsk } from "./core/asks.js";
-import { lastAssistantText, transcriptRel } from "./core/transcript.js";
+import { lastAssistantText, lastUserPrompt, titleOf, transcriptRel } from "./core/transcript.js";
 
 const GIT_TTL = 60000;
 // Mods share one script engine, and a mod that runs it out of memory breaks every mod until Herdr restarts
@@ -39,7 +39,14 @@ async function messageOf(addr) {
     const meta = JSON.parse(await readTextFile(`${home()}/.claude/sessions/${pid}.json`));
     const tail = await exec("tail", ["-c", String(TAIL_BYTES), `${home()}/${transcriptRel(meta.sessionId, meta.cwd)}`]);
     const last = tail.code === 0 ? lastAssistantText(tail.stdout) : null;
-    if (last) data = { ...base, text: last.text, at: last.at, first: last.text.split("\n").find((l) => l.trim()) ?? "", ...extractAsk(last.text) };
+    // The title follows what you last asked; Claude's own title (base.title) is the fallback.
+    // Prompts can sit far above the tail after a long turn, so grep the whole file for prompt lines only
+    // (no tool results, no harness meta, none over 200 KB such as pasted images) and keep the last few.
+    const PROMPTS = `grep -E '"type":"(user|queue-operation)"' "$1" | grep -v '"tool_result"' | grep -v '"isMeta":true' | awk 'length($0) < 200000' | tail -n 4`;
+    const pr = await exec("sh", ["-c", PROMPTS, "sh", `${home()}/${transcriptRel(meta.sessionId, meta.cwd)}`]).catch(() => null);
+    const asked = pr?.code === 0 ? titleOf(lastUserPrompt(pr.stdout)?.text) : null;
+    if (asked) data = { ...data, asked };
+    if (last) data = { ...data, text: last.text, at: last.at, first: last.text.split("\n").find((l) => l.trim()) ?? "", ...extractAsk(last.text) };
   } catch {}
   msgCache.set(addr, { key, data });
   return data;
@@ -72,12 +79,14 @@ export async function gather() {
     const mine = [...paned, ...helpers];
     const list = [];
     for (const a of mine) list.push(await (async () => {
-      const m = a.app === "claude-code" && a.status !== "working" ? await messageOf(a.address) : {};
+      // Working agents are read too, for the title; their message and ask wait until they stop.
+      const read = a.app === "claude-code" ? await messageOf(a.address) : {};
+      const m = a.status !== "working" ? read : { asked: read.asked, title: read.title, name: read.name };
       const sm = sum[a.address], fresh = sm && sm.at === m.at ? sm : null;
       return { addr: a.address, pane: a.pane, tab: a.tab_name, label: m.name || a.title || m.title || a.address, state: a.status,
         msg: m.msg, at: m.at ?? null, first: m.first, ask: m.ask ?? null, question: m.question ?? null,
         recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null, text: m.text ?? null, parent: a.parent ?? null,
-        title: m.title ?? a.title ?? null };
+        title: m.asked ?? m.title ?? a.title ?? null };
     })());
     // Everything else in the space: mod panes (dashboards like herdr-md or draw), shells and other processes.
     const tabName = Object.fromEntries(s.tabs.map((t) => [t.id, t.name]));
