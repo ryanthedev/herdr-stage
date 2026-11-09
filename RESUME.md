@@ -6,7 +6,7 @@
   machine's own colour (themes.js machineColor, hashed from the name: ska violet), right after the space name,
   at every width. Local spaces get no pill. `/` search matches the machine name too.
 - Palette avoids pink (needs-you) and leads with cool hues; gold is only the 4th machine's.
-- Verified in an isolated test window (search seam {"find":"ska"}). Not yet installed into the main Herdr.
+- Verified in an isolated test window (search seam {"find":"ska"}). Installed into the main Herdr the same day.
 - Known gap: Claude agents on a remote machine get no bubble message/title, because adapter messageOf reads
   transcripts from this Mac's ~/.claude (they live on the remote machine).
 - Test-home gotcha: settings.json `sounds` is an object; set sounds.enabled=false, not sounds=false.
