@@ -151,15 +151,23 @@ export default class Stage extends View {
       .child(div().text_size(T.status).text_color(color).child(word));
   }
 
-  // The mono line under the name: branch, folder, nested-under, and the rest as labelled counts.
+  // The line under the name: where the space lives as two chips (branch, folder), then nested-under and the
+  // rest as quiet labelled counts.
   metaLine(e, c, live, more = 0) {
     const branch = live.branch ?? (c?.facts.find((f) => f.startsWith("⎇")) ?? "").replace("⎇ ", "");
     const parentName = e.parent ? spaces().find((s) => s.id === e.parent)?.name : null;
     const n = (v, one, many) => (v ? `${v} ${v > 1 ? many : one}` : null);
-    const parts = [parentName && `↳ ${parentName}`, branch && `⎇ ${branch}`, c?.facts[0],
+    const folder = c?.facts[0] && !c.facts[0].startsWith("⎇") ? c.facts[0] : null;
+    const chip = (glyph, text) => h_flex().flex_none().h(ROW.meta).px(7).gap(5).items_center().rounded(5).bg(K.chip)
+      .child(div().text_color(K.ink3).child(glyph))
+      .child(div().max_w(220).truncate().text_color(K.ink2).child(text));
+    const rest = [parentName && `↳ ${parentName}`,
       n(c?.counts.idle, "idle", "idle"), n(c?.counts.mods, "dashboard", "dashboards"), n(c?.counts.shells, "shell", "shells"), n(c?.counts.procs, "process", "processes"),
-      e.kids ? `${e.kids} nested` : null, more ? `+${more} more` : null];
-    return div().truncate().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(parts.filter(Boolean).join(" · "));
+      e.kids ? `${e.kids} nested` : null, more ? `+${more} more` : null].filter(Boolean);
+    return h_flex().h(ROW.meta).gap(6).items_center().min_w(0).overflow_hidden().font_family(this.font).text_size(T.meta)
+      .when(Boolean(branch), (el) => el.child(chip("⎇", branch)))
+      .when(Boolean(folder), (el) => el.child(chip("▱", folder.split("/").filter(Boolean).pop() || folder)))
+      .when(rest.length > 0, (el) => el.child(div().flex_1().min_w(0).truncate().pl(2).text_color(K.ink3).child(rest.join(" · "))));
   }
 
   // What a bubble says, up to three lines: the ask, else the agent's recap or last message, else what it is.
@@ -212,7 +220,7 @@ export default class Stage extends View {
         .child(div().absolute().left(SIDE + indent - 10).top(22).w(6).h(1).bg(K.rule)))
       .child(head);
     if (tier === "xs") return body;
-    return body.child(div().mt(2).child(this.metaLine(e, c, live, v.more)))
+    return body.child(div().mt(4).child(this.metaLine(e, c, live, v.more)))
       .when(v.bubbles.length > 0, (el) => el.child(h_flex().mt(ROW.gap).gap(BUBBLE_GAP).min_w(0).overflow_hidden()
         .children(v.bubbles.map((i) => this.bubble(i, bw)))));
   }
@@ -279,7 +287,7 @@ export default class Stage extends View {
     this.font = String(settings().font || settings().font_family || K.mono);
     // The same ground as your terminals: the theme's terminal background at the layout's terminal_opacity,
     // so whatever the layout paints behind panes shows through Stage exactly as it does through a terminal.
-    this.need = theme().accent ?? K.need;
+    this.need = K.need;
     // Herdr stacks two layers at that opacity under a terminal (measured: a terminal shows the square of what
     // one layer shows), so Stage paints their combined cover, 1 - (1 - op)^2, to match.
     const op = Math.max(0, Math.min(1, Number(layout()?.terminal_opacity ?? settings().terminal_opacity ?? 1)));

@@ -10,7 +10,7 @@ export const TIERS = [["wide", 420], ["s", 300], ["xs", 0]];
 export const tierFor = (width) => TIERS.find(([, min]) => width >= min)[0];
 
 // Row geometry (px, before the app's zoom), shared by the skin and tests.
-export const ROW = { padY: 12, head: 22, meta: 16, gap: 8, bubble: 96, xs: 40 }; // bubble: title + 3 message lines
+export const ROW = { padY: 12, head: 22, meta: 20, gap: 8, bubble: 96, xs: 40 }; // bubble: title + 3 message lines
 export const BUBBLE_GAP = 8, SIDE = 16, BUBBLE_MIN = 280;
 
 // The items of a space in the order they matter: asks, working agents, other agents, dashboards,
