@@ -1,5 +1,15 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09: transparent; default width blocked on Herdr
+- Stage draws no ground (no root bg): the pane frame and layout background (matrix rain) show through like the
+  terminals; bubbles/field are translucent (themes.js MISSION alpha values).
+- Default pane width: not possible today. pane.split takes no size, there is no pane.resize, and mod.json
+  only sizes overlays/edge blocks. Needs a Herdr feature (feedback text drafted for the user to send).
+- Gotcha: `herdr-app feedback <text>` takes ANY argument as the text, including --help, and opens the review
+  window on the user's screen. Don't probe it.
+- Heel's leader wrote ROLES.md here (untracked): "a space is a team, leader = role=orchestrator". It conflicts
+  with the user's earlier "drop the orchestrator" and with stage.parent nesting; the user's call.
+
 ## 2026-11-09: subspaces
 - User kept nesting as is: child spaces are full indented rows with a connector and "↳ parent"; declared only
   by the terminal label `stage.parent=<space>` (no key in Stage). Heel's leader is asking the same question.
