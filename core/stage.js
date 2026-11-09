@@ -9,7 +9,7 @@ const RANK = { blocked: 5, working: 3, done: 2, idle: 1 };
 export function agentRow(a) {
   const move = moveOf(a);
   const line = a.state === "working" ? clean(a.msg || a.first) : clean(a.recap || a.first);
-  return { addr: a.addr, pane: a.pane ?? null, label: a.label, state: a.state, at: a.at, tab: a.tab, line: line || null, move: move?.text ?? null, moveRank: move?.rank ?? 0, recap: a.recap ?? null, text: a.text ?? null };
+  return { addr: a.addr, pane: a.pane ?? null, label: a.label, state: a.state, at: a.at, tab: a.tab, line: line || null, move: move?.text ?? null, moveRank: move?.rank ?? 0, recap: a.recap ?? null, text: a.text ?? null, screen: a.screen ?? null };
 }
 
 const order = (x, y) => (y.moveRank ? 9 : 0) + RANK[y.state] - ((x.moveRank ? 9 : 0) + RANK[x.state]) || String(y.at ?? "").localeCompare(String(x.at ?? ""));

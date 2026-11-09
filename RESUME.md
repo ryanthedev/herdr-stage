@@ -1,5 +1,20 @@
 # Resume point (update this before handing off)
 
+## 2026-11-08 (late): one space per row, adapting to width
+- User rejected every card style (the 4 dealt directions in .design-foundations/dna/stage-pane/sheet.html and
+  Codex's pass). Asked instead for: each space a full row, its items as mini thumbnails, less info as the pane
+  narrows, current space pinned. Layout mock: .design-foundations/dna/stage-pane/adaptive.html.
+- core/rows.js: tiers xl>=900 (thumbnails + screen previews), l>=640 (agents keep previews), m>=420 (chips),
+  s>=300 (one line + ask), xs. Row heights are computed (virtual list can't measure). Pinned current space sits
+  above the list and is left out of it.
+- Previews: Claude agents show the end of their last message (their screen is just the input box); shells
+  and processes show `hc read` (last lines, box-drawing rules dropped). Fetched only in xl/l tiers.
+- Width bug fixed: on_size_change fires only for a new element or a changed size, so after a hot reload into a
+  same-size pane the old root id never reported; the root id now has a per-instance nonce.
+- GPUI gotcha: preview lines need fixed-height divs (h(11) + truncate); with whitespace_nowrap and a numeric
+  line_height they rendered nothing.
+- Look is still open: user hasn't liked any style yet; asked them for a reference app or what was ugly.
+
 ## 2026-11-08 (night): order, nesting, search, non-agent panes, Codex design pass
 - Order (core/order.js): blocked/your-move spaces first, then score = decayed dwell minutes + 5 per switch +
   up to 60 for recent activity (half-life 72h). Presence is recorded by Stage itself in shared("stage.presence"),

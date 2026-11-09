@@ -3,6 +3,7 @@
 import { spaces, agents, panes, terminals, exec, hc, readTextFile, home } from "herdr";
 import { extractAsk } from "./core/asks.js";
 import { lastAssistantText, transcriptRel } from "./core/transcript.js";
+import { previewOf } from "./core/rows.js";
 
 const GIT_TTL = 60000;
 // Mods share one script engine, and a mod that runs it out of memory breaks every mod until Herdr restarts
@@ -45,6 +46,12 @@ async function messageOf(addr) {
   return data;
 }
 
+// A terminal's screen as a few short lines, for a thumbnail. Read one at a time (shared script engine).
+async function screenOf(addr) {
+  if (!addr) return null;
+  try { const r = await hc(["read", addr]); return r.code === 0 ? previewOf(r.stdout) : null; } catch { return null; }
+}
+
 async function summaries() {
   try { return JSON.parse((await readTextFile(`${home()}/.cache/herdr-stage/summaries.json`)) ?? "{}"); } catch { return {}; }
 }
@@ -52,12 +59,13 @@ async function summaries() {
 // A pane that isn't an agent: { kind: "mod" | "shell" | "process", label, detail, tab, pane }.
 function otherOf(p, tab) {
   const short = (d) => (d || "").replace(/^\/Users\/[^/]+/, "~");
-  if (!p.terminal) return { kind: "mod", label: p.title || p.mod, detail: p.mod, tab, pane: p.pane };
+  if (!p.terminal) return { kind: "mod", label: p.title || p.mod, detail: p.mod, tab, pane: p.pane, terminal: null };
   const shell = p.program?.shell || p.program?.key === "shell";
-  return { kind: shell ? "shell" : "process", label: shell ? p.program?.name || "shell" : p.program?.name || p.title, detail: short(p.cwd), tab, pane: p.pane };
+  return { kind: shell ? "shell" : "process", label: shell ? p.program?.name || "shell" : p.program?.name || p.title, detail: short(p.cwd), tab, pane: p.pane, terminal: p.terminal };
 }
 
-export async function gather() {
+// previews: also read each terminal's screen for thumbnails (only wide panes show them).
+export async function gather({ previews = false } = {}) {
   const sp = spaces(), ag = agents(), ps = panes(), terms = terminals(), sum = await summaries();
   const out = [];
   for (const s of sp) out.push(await (async () => {
@@ -76,12 +84,16 @@ export async function gather() {
       const sm = sum[a.address], fresh = sm && sm.at === m.at ? sm : null;
       return { addr: a.address, pane: a.pane, tab: a.tab_name, label: m.name || a.title || m.title || a.address, state: a.status,
         msg: m.msg, at: m.at ?? null, first: m.first, ask: m.ask ?? null, question: m.question ?? null,
-        recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null, text: m.text ?? null, parent: a.parent ?? null };
+        recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null, text: m.text ?? null, parent: a.parent ?? null,
+        // A Claude agent's screen ends in its input box and status bar, so its thumbnail shows the end of
+        // its last message instead; other programs show their real screen.
+        screen: !previews ? null : m.text ? previewOf(m.text.replace(/\*\*|__|`/g, "")) : await screenOf(a.address) };
     })());
     // Everything else in the space: mod panes (dashboards like herdr-md or draw), shells and other processes.
     const tabName = Object.fromEntries(s.tabs.map((t) => [t.id, t.name]));
     const others = ps.filter((p) => tabIds.has(p.tab) && p.mod !== "stage" && !listed.has(p.terminal) && !(p.status || p.program?.agent))
       .map((p) => otherOf(p, tabName[p.tab]));
+    if (previews) for (const o of others) o.screen = await screenOf(o.terminal);
     return { id: s.id, name: s.name, folder, git: await gitOf(folder, s.machine), agents: list, others };
   })());
   return { spaces: out };
