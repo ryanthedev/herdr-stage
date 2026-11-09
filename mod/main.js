@@ -7,10 +7,11 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { theme, run, spaces, panes, focused, nextCommand } from "herdr";
+import { theme, run, spaces, panes, focused, nextCommand, terminals, agents } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextList } from "./core/list.js";
+import { rolesOf } from "./core/roles.js";
 import { tokens } from "./themes.js";
 
 const MOD = "stage";
@@ -77,6 +78,15 @@ export default class Stage extends View {
     return color ? div().size(7).flex_none().rounded(4).bg(color) : div().size(7).flex_none().rounded(4).border(1).border_color(k.idle);
   }
 
+  // Who leads this space: its orchestrator(s), and the proxy when it lives here.
+  lead(k, live) {
+    const ls = this.roles.leads[live.id] ?? [], here = this.roles.proxy?.space === live.id;
+    const parts = ls.map((l) => div().text_color(k.ink2).child(`led by ${l.name} · ${l.addr}`));
+    if (here) parts.push(div().text_color(k.focus).child("proxy lives here"));
+    if (!parts.length) parts.push(div().text_color(k.idle).child("no orchestrator"));
+    return h_flex().pl(15).gap(10).text_size(T.cap).children(parts);
+  }
+
   row(k, live, i) {
     const c = this.byId[live.id], on = i === this.sel;
     const ask = c?.rows.find((r) => r.move);
@@ -91,6 +101,7 @@ export default class Stage extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(T.body).font_weight(live.active ? 700 : 500).text_color(k.ink).child(live.name))
         .when(live.active, (el) => el.child(div().flex_none().text_size(T.cap).text_color(k.focus).child("here")))
         .when(Boolean(branch), (el) => el.child(div().flex_none().max_w(140).truncate().text_size(T.cap).text_color(k.muted).child(branch))))
+      .child(this.lead(k, live))
       .child(div().pl(15).child(this.counts(k, c, live)))
       .when(Boolean(ask), (el) => el.child(div().pl(15).max_h(36).overflow_hidden().text_size(T.sm).text_color(k.moveRow).child(ask.move)));
   }
@@ -98,6 +109,7 @@ export default class Stage extends View {
   render(cx) {
     const k = tokens(theme(), "default");
     const list = spaces();
+    this.roles = rolesOf(terminals(), agents());
     if (this.sel > list.length - 1) this.sel = Math.max(0, list.length - 1);
     const root = v_flex().id("stage").track_focus(this.handle).size_full().bg(k.bg).text_color(k.ink)
       .on_key_down((e, cx) => {
@@ -113,10 +125,18 @@ export default class Stage extends View {
       .child(div().text_size(T.cap).text_color(k.muted).child(`${list.length} spaces`))
       .child(div().flex_1())
       .when(this.lane > 0, (el) => el.child(div().text_size(T.cap).font_weight(600).text_color(k.move).child(`${this.lane} waiting on you`)));
+    const px = this.roles.proxy;
+    const proxyBar = h_flex().px(16).py(8).gap(8).items_center().border_b(1).border_color(k.border).text_size(T.cap)
+      .child(div().text_color(k.muted).child("Proxy"))
+      .child(px
+        ? div().flex_1().min_w(0).truncate().text_color(k.ink).child(`${px.name} · ${px.addr}${px.status ? ` · ${px.status}` : ""}`)
+        : div().flex_1().text_color(k.idle).child("none labelled (hc label <t> role=proxy)"))
+      .when(Boolean(px), (el) => el.child(div().flex_none().cursor_pointer().text_color(k.focus).child("go")
+        .on_click(() => run("agent.focus", { terminal: px.addr }))));
     const body = v_flex().id("stage-list").flex_1().min_h(0).px(6).py(6).gap(2).overflow_y_scrollbar()
       .children(list.map((sp, i) => this.row(k, sp, i)));
     const foot = div().px(16).py(8).border_t(1).border_color(k.border).text_size(T.cap).text_color(k.muted)
       .child(this.error ? `Couldn't read agents: ${this.error}` : !this.loaded ? "Reading agents…" : "j k move · ↵ go to space · q close");
-    return root.child(header).child(body).child(foot);
+    return root.child(header).child(proxyBar).child(body).child(foot);
   }
 }
