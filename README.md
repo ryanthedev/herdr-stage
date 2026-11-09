@@ -17,3 +17,17 @@ every agent that stops. Hexagonal: `core/` is plain JS with no Herdr, UI or Node
 
 Mods share one script engine, and one mod running out of memory breaks every mod until Herdr restarts,
 so the adapter reads small transcript tails, one at a time, only for agents that have stopped.
+
+## Screens (2026-11-09)
+
+| | |
+|---|---|
+| ![Spaces with machine pills and chips](docs/stage-machines-chips.png) | ![? key list](docs/stage-help.png) |
+| Each space: its machine (remote ones only), status, branch, folder and counts as chips. | `?`: Stage's keys, from the herdr-help package. |
+| ![New space: machine](docs/stage-new-space-machine.png) | ![New space: folder](docs/stage-new-space-folder.png) |
+| `n`: pick a machine… | …a folder on it (repos found there; your spaces' folders first)… |
+| ![New space: start](docs/stage-new-space-start.png) | |
+| …and what to start. | |
+
+- `n` new space: `core/open.js` (machine, folder, program; tested) and the scan it runs on the machine.
+- `?` key list: copied in from herdr-help (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.

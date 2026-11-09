@@ -186,15 +186,23 @@ export default class Stage extends View {
     const chip = (glyph, text) => h_flex().flex_none().h(ROW.meta).px(7).gap(5).items_center().rounded(5).bg(K.chip)
       .child(div().text_color(K.ink3).child(glyph))
       .child(div().max_w(220).truncate().text_color(K.ink2).child(text));
-    const rest = [parentName && `↳ ${parentName}`,
-      n(c?.counts.idle, "idle", "idle"), n(c?.counts.mods, "dashboard", "dashboards"), n(c?.counts.shells, "shell", "shells"), n(c?.counts.procs, "process", "processes"),
-      e.kids ? `${e.kids} nested` : null, more ? `+${more} more` : null].filter(Boolean);
+    // Everything else on the line is a chip too, each with its icon: nested-under, the space's other panes,
+    // its nested spaces, and how many items didn't fit as bubbles.
+    const counts = [
+      parentName && ["\uf148", `under ${parentName}`],
+      n(c?.counts.idle, "idle", "idle") && ["\uf186", n(c?.counts.idle, "idle", "idle")],
+      n(c?.counts.mods, "dashboard", "dashboards") && ["\uf0e4", n(c?.counts.mods, "dashboard", "dashboards")],
+      n(c?.counts.shells, "shell", "shells") && ["\uf489", n(c?.counts.shells, "shell", "shells")],
+      n(c?.counts.procs, "process", "processes") && ["\uf013", n(c?.counts.procs, "process", "processes")],
+      e.kids && ["\uf0e8", `${e.kids} nested`],
+      more && ["\uf141", `${more} more`],
+    ].filter(Boolean);
     return h_flex().h(ROW.meta).gap(6).items_center().min_w(0).overflow_hidden().font_family(this.font).text_size(T.meta)
       .child(this.status(c, live))
       .when(Boolean(branch), (el) => el.child(chip("\ue725", branch)))
       // The folder chip only when it says something the name doesn't.
       .when(Boolean(folderName) && folderName !== live.name, (el) => el.child(chip("\uf07b", folderName)))
-      .when(rest.length > 0, (el) => el.child(div().flex_1().min_w(0).truncate().pl(2).text_color(K.ink3).child(rest.join(" · "))));
+      .children(counts.map(([glyph, text]) => chip(glyph, text)));
   }
 
   // What a bubble says, up to three lines: the ask, else the agent's recap or last message, else what it is.
