@@ -1,5 +1,14 @@
 # Resume point (update this before handing off)
 
+## 2026-11-08 (later): Stage is now a side pane, not a popup
+- User found the popup ugly and asked for a side pane they can move focus into, like herdr-md. v1 shows only
+  the list of all spaces: mod/main.js (pane view, "focusable": true), core/list.js (j/k/g/G/enter/q reducer).
+- cmd-g (layout:matrix in ~/.config/herdr-app/keys.json) = pane.split right {mod:"stage"}; a second cmd-g in
+  the same tab focuses the existing pane and closes the new one. Enter = space.select (the pane stays in the
+  old space's tab, so it disappears from view after the switch: next thing to decide).
+- The popup (cards, canvas, zoom, noir) is kept in mod/dialog.js, not installed. Its notes below still apply.
+
+
 **Updated:** 2026-11-08, #220 done + wheel zoom/pan + measured heights; installed and loading in the main Herdr (restarted 5:34 PM).
 
 ## Done
