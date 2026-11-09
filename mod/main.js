@@ -17,17 +17,18 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { theme, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared } from "herdr";
+import { theme, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextGrid, colsFor, rowOf, layoutRows } from "./core/grid.js";
 import { track, prune, rank } from "./core/order.js";
 import { parentsOf, families, labelsOf } from "./core/nest.js";
+import { search, nextSearch } from "./core/search.js";
 import { tokens } from "./themes.js";
 
 const MOD = "stage";
-const T = { tiny: 11, cap: 12, sm: 13, body: 15, name: 20 };
-const CARD_MIN = 270, CARD_H = 184, GAP = 14, PAD = 14, SLACK = 14; // SLACK: room for the scrollbar
+const T = { tiny: 11, cap: 12, sm: 13, body: 14, name: 19 };
+const CARD_MIN = 270, CARD_H = 200, GAP = 12, PAD = 16, SLACK = 14; // SLACK: room for the scrollbar
 const ROW_H = CARD_H + GAP;
 
 function ago(iso) {
@@ -69,6 +70,14 @@ export default class Stage extends View {
     });
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
+    // Test seam: an isolated Herdr home can hold stage-test.json {"find": "query"} to open a search
+    // without key automation. Absent in a real home.
+    cx.spawn(async (cx) => {
+      try {
+        const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
+        if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
+      } catch {}
+    });
   }
 
   refresh(cx) {
@@ -125,17 +134,19 @@ export default class Stage extends View {
 
   cardW(cols) { return Math.floor((this.width - 2 * PAD - SLACK - GAP * (cols - 1)) / cols); }
 
-  // "2 your move  ·  1 working  ·  ○ 3 idle", each with its own coloured dot (the POC's status line).
+  // Compact state counts: distinct color and shape cues without turning the card into a dashboard.
   counts(k, c, live) {
-    const part = (n, label, color, ring) => h_flex().gap(5).items_center()
+    const part = (n, label, color, ring) => h_flex().gap(4).items_center()
       .child(ring ? div().size(7).rounded(4).border(1).border_color(color) : div().size(7).rounded(4).bg(color))
       .child(div().text_color(color).child(`${n} ${label}`));
     const parts = [];
     if (c?.counts.move) parts.push(part(c.counts.move, "your move", k.move));
     if (c?.counts.working) parts.push(part(c.counts.working, "working", k.working));
     if (c?.counts.idle) parts.push(part(c.counts.idle, "idle", k.muted, true));
-    if (!parts.length) parts.push(div().text_color(k.idle).child(c ? "nothing running" : live.status ?? ""));
-    return h_flex().gap(12).text_size(T.cap).font_weight(600).children(parts);
+    const quiet = (n, one, many) => n ? [div().text_color(k.muted).font_weight(500).child(`${n} ${n > 1 ? many : one}`)] : [];
+    parts.push(...quiet(c?.counts.mods, "dashboard", "dashboards"), ...quiet(c?.counts.procs, "process", "processes"), ...quiet(c?.counts.shells, "shell", "shells"));
+    if (!parts.length) parts.push(div().text_color(k.idle).child(c ? "empty" : live.status ?? ""));
+    return h_flex().gap(9).text_size(T.tiny).font_weight(600).children(parts);
   }
 
   // An agent's state as a glyph: an orange "!" when it needs you, a dot otherwise.
@@ -159,33 +170,66 @@ export default class Stage extends View {
         .when(Boolean(sub), (el) => el.child(div().truncate().text_size(T.cap).text_color(r.move ? k.moveRow : k.muted).child(sub))));
   }
 
+  // A pane that isn't an agent: a dashboard (mod), a running process, or a shell.
+  other(k, o) {
+    const mark = o.kind === "mod" ? div().size(9).rounded(2).border(1).border_color(k.nestText ?? k.focus)
+      : o.kind === "process" ? div().size(7).rounded(4).bg(k.ink2) : div().text_size(T.tiny).font_weight(700).text_color(k.idle).child("›");
+    return h_flex().gap(8).items_center().min_w(0)
+      .child(h_flex().w(14).flex_none().justify_center().child(mark))
+      .child(div().flex_none().max_w(150).truncate().text_size(T.sm).text_color(o.kind === "shell" ? k.muted : k.ink).child(o.label))
+      .child(div().flex_1().min_w(0).truncate().text_size(T.tiny).text_color(k.idle).child(o.kind === "mod" ? "dashboard" : o.detail ?? ""));
+  }
+
+  // The name, with the characters a search matched drawn in the focus colour.
+  title(k, name, hits) {
+    const s = k.caps ? name.toUpperCase() : name;
+    if (!hits?.length) return div().flex_1().min_w(0).truncate().text_size(T.name).font_weight(k.headWeight).text_color(k.head).child(s);
+    const on = new Set(hits), segs = [];
+    for (let i = 0; i < s.length; i++) {
+      const m = on.has(i), last = segs[segs.length - 1];
+      if (last && last.m === m) last.t += s[i]; else segs.push({ m, t: s[i] });
+    }
+    return h_flex().flex_1().min_w(0).overflow_hidden().text_size(T.name).font_weight(k.headWeight)
+      .children(segs.map((g) => div().flex_none().text_color(g.m ? k.focus : k.head).child(g.t)));
+  }
+
   card(k, e, i, w) {
     const live = e.space;
     const c = this.byId[live.id], on = i === this.sel, move = Boolean(c?.hasMove);
     const branch = live.branch ?? (c?.facts.find((f) => f.startsWith("⎇")) ?? "").replace("⎇ ", "");
     const folder = c?.facts[0] ?? "";
-    const top = (c?.top ?? []).slice(0, 2), more = (c?.rows.length ?? 0) - top.length;
-    return v_flex().w(w).h(CARD_H).flex_none().px(16).pt(14).pb(12).rounded(14).overflow_hidden().relative()
-      // A faint lit top edge: on a near-black pane a shadow alone barely reads, so the card catches light.
-      .child(div().absolute().top(0).left(14).right(14).h(1).bg(on ? tint(k.focus, 0x66, k.line) : "#ffffff14"))
-      .bg(on ? k.card2 : k.card).when(Boolean(c?.loose), (el) => el.bg(k.bg).border_dashed())
+    // Up to two lines: agents first, then dashboards, processes and shells to fill.
+    const top = (c?.top ?? []).slice(0, 2), fill = (c?.others ?? []).slice(0, 2 - top.length);
+    const more = (c?.rows.length ?? 0) + (c?.others?.length ?? 0) - top.length - fill.length;
+    const parentName = e.parent ? spaces().find((s) => s.id === e.parent)?.name : null;
+    const cardBg = on ? k.cardSelected : move ? k.cardUrgent : k.card;
+    return v_flex().w(w).h(CARD_H).flex_none().px(e.depth ? 20 : 16).pt(13).pb(11).rounded(12).overflow_hidden().relative()
+      // Nested cards get a short branch connector and a parent crumb, so family membership survives
+      // even when a narrow pane wraps each family member onto its own row.
+      .when(Boolean(e.depth), (el) => el
+        .child(div().absolute().left(8).top(0).w(1).h(29).bg(k.nestLine))
+        .child(div().absolute().left(8).top(28).w(13).h(1).bg(k.nestLine)))
+      .bg(cardBg).when(Boolean(c?.loose), (el) => el.bg(k.looseBg).border_dashed())
       .border(on ? 2 : 1).border_color(on ? k.focus : move ? k.moveLine : k.line)
-      .when(on, (el) => el.shadow_xl()).when(!on, (el) => el.shadow_md())
-      .child(h_flex().gap(8).items_center()
-        .child(div().flex_1().min_w(0).truncate().font_family(k.display).text_size(T.name).font_weight(k.headWeight).text_color(k.head)
-          .child(k.caps ? live.name.toUpperCase() : live.name))
-        .when(live.active, (el) => el.child(div().flex_none().px(7).py(1).rounded(999).bg(tint(k.focus, 0x26, k.selBg)).text_size(T.tiny).font_weight(700).text_color(k.focus).child("HERE"))))
-      .child(div().mt(3).truncate().text_size(T.cap).text_color(k.muted).child([
-        e.parent && `↳ ${spaces().find((s) => s.id === e.parent)?.name ?? ""}`, e.kids && `${e.kids} nested`,
+      .when(on, (el) => el.shadow_md())
+      .child(h_flex().flex_none().gap(8).items_center()
+        .child(this.title(k, live.name, e.hits))
+        .when(e.kids > 0, (el) => el.child(div().flex_none().text_size(T.tiny).font_weight(600).text_color(k.nestText).child(`${e.kids} nested`)))
+        .when(live.active, (el) => el.child(div().flex_none().px(7).py(2).rounded(999).bg(tint(k.focus, 0x20, k.selBg)).text_size(T.tiny).font_weight(700).text_color(k.focus).child("HERE"))))
+      .when(Boolean(parentName), (el) => el.child(div().flex_none().mt(3).truncate().text_size(T.tiny).font_weight(600).text_color(k.nestText)
+        .child(`↳ ${parentName}`)))
+      .child(div().flex_none().mt(parentName ? 2 : 4).truncate().text_size(T.cap).text_color(k.muted).child([
         folder, branch && `⎇ ${branch}`].filter(Boolean).join("  ·  ")))
-      .child(div().mt(8).child(this.counts(k, c, live)))
-      .when(top.length > 0, (el) => el.child(v_flex().mt(10).pt(10).gap(8).border_t(1).border_color(k.border).min_w(0)
-        .children(top.map((r) => this.agent(k, r)))))
+      .child(div().flex_none().mt(8).child(this.counts(k, c, live)))
+      .when(top.length + fill.length > 0, (el) => el.child(v_flex().flex_none().mt(9).pt(8).gap(7).border_t(1).border_color(k.border).min_w(0)
+        .children([...top.map((r) => this.agent(k, r)), ...fill.map((o) => this.other(k, o))])))
       .child(div().flex_1())
-      .when(more > 0, (el) => el.child(div().text_size(T.tiny).text_color(k.idle).child(`${more} more agent${more > 1 ? "s" : ""}`)));
+      .when(more > 0, (el) => el.child(div().text_size(T.tiny).text_color(k.idle).child(`${more} more`)));
   }
 
   key(e, list, rows, cx) {
+    if (this.find) return this.findKey(e, list, cx);
+    if (e.key === "/") { this.find = { query: "", sel: 0 }; this.scroll.scroll_to_item(0); cx.stop_propagation(); return cx.notify(); }
     if (e.modifiers?.platform || e.modifiers?.control) return; // cmd-h/l etc. stay the app's
     const before = this.sel;
     const r = nextGrid(this.sel, e.key, rows, Boolean(e.modifiers?.shift));
@@ -195,6 +239,35 @@ export default class Stage extends View {
     if (r.effect?.open !== undefined) this.go(list[r.effect.open]?.space);
     if (r.effect?.close) { const me = panes().find((p) => p.focused && p.mod === MOD); if (me) run("pane.close", { pane: me.pane }); }
     cx.stop_propagation(); cx.notify();
+  }
+
+  // Keys while searching: typing filters, ctrl-n/p or arrows move, Enter goes there, Esc goes back to
+  // the grid with the picked card selected.
+  findKey(e, list, cx) {
+    if (e.modifiers?.platform) return;
+    const r = nextSearch(this.find, e.key, list.length, { control: Boolean(e.modifiers?.control) });
+    const moved = r.sel !== this.find.sel || r.query !== this.find.query;
+    this.find = { query: r.query, sel: r.sel };
+    if (moved) this.scroll.scroll_to_item(r.sel);
+    const pick = list[r.effect?.open ?? r.sel];
+    if (r.effect?.open !== undefined) { this.find = null; this.selId = pick?.id ?? this.selId; this.go(pick?.space); }
+    if (r.effect?.close) { this.find = null; if (pick) this.selId = pick.id; }
+    cx.stop_propagation(); cx.notify();
+  }
+
+  // Search results: every card that matches all words, best first, flat (no families).
+  found() {
+    const all = this.shown(), byId = Object.fromEntries(all.map((e) => [e.id, e]));
+    const cards = all.map((e) => {
+      const c = this.byId[e.id];
+      return { id: e.id, fields: [
+        { key: "name", text: e.space.name, weight: 2 },
+        { key: "where", text: [c?.facts[0], e.space.branch].filter(Boolean).join(" ") },
+        { key: "agents", text: (c?.rows ?? []).map((r) => `${r.label} ${r.move ?? r.line ?? ""}`).join(" "), weight: 0.6 },
+        { key: "panes", text: (c?.others ?? []).map((o) => o.label).join(" "), weight: 0.6 },
+      ] };
+    });
+    return search(this.find.query, cards).map((m) => ({ ...byId[m.id], depth: 0, parent: null, kids: 0, hits: m.hits.name }));
   }
 
   // A click: the wrapper's mouse-down gives the column, the list's item click gives the row.
@@ -210,10 +283,13 @@ export default class Stage extends View {
   render(cx) {
     const k = tokens(theme(), "default");
     this.presence(false);
-    const list = this.shown();
+    const list = this.find ? this.found() : this.shown();
+    if (this.find) this.find.sel = Math.max(0, Math.min(this.find.sel, list.length - 1));
     const at = this.selId ? list.findIndex((e) => e.id === this.selId) : -1;
-    this.sel = at >= 0 ? at : Math.max(0, Math.min(this.sel, list.length - 1));
-    const cols = this.cols(), w = this.cardW(cols), rows = layoutRows(list.map((e) => e.depth), cols);
+    this.sel = this.find ? this.find.sel : at >= 0 ? at : Math.max(0, Math.min(this.sel, list.length - 1));
+    // Search results are one column, like Telescope's list; the grid is back when the search closes.
+    const cols = this.find ? 1 : this.cols(), w = this.cardW(cols);
+    const rows = this.find ? list.map((_, i) => [i]) : layoutRows(list.map((e) => e.depth), cols);
     const root = v_flex().id("stage").track_focus(this.handle).size_full().bg(k.bg).text_color(k.ink)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {
@@ -221,26 +297,33 @@ export default class Stage extends View {
         if (Math.abs(nw - this.width) > 2) { this.width = nw; cx.notify(); }
       })
       .on_key_down((e, cx) => this.key(e, list, rows, cx));
-    const header = h_flex().px(18).pt(16).pb(12).gap(10).items_end()
-      .child(div().font_family(k.display).text_size(T.name + 2).font_weight(k.headWeight).text_color(k.head).child(k.caps ? "STAGE" : "Stage"))
-      .child(div().pb(2).text_size(T.cap).text_color(k.muted).child(`${list.length} spaces`))
+    const header = h_flex().px(18).pt(15).pb(12).gap(10).items_end()
+      .child(div().text_size(T.name + 1).font_weight(700).text_color(k.head).child(k.caps ? "STAGE" : "Stage"))
+      .child(div().pb(2).text_size(T.cap).text_color(k.muted).child(`${spaces().length} spaces`))
       .child(div().flex_1())
       .when(this.lane > 0, (el) => el.child(h_flex().mb(1).gap(6).items_center().px(9).py(3).rounded(999).bg(tint(k.move, 0x22, k.moveBg))
         .child(div().size(6).rounded(3).bg(k.move))
         .child(div().text_size(T.cap).font_weight(700).text_color(k.move).child(`${this.lane} waiting on you`))));
+    const prompt = this.find && h_flex().mx(PAD).mb(4).px(12).py(8).gap(8).items_center().rounded(10)
+      .bg(k.card).border(1).border_color(k.focus)
+      .child(div().text_size(T.body).font_weight(700).text_color(k.focus).child("/"))
+      .child(div().text_size(T.body).text_color(k.ink).child(this.find.query))
+      .child(div().w(2).h(16).bg(k.focus))
+      .child(div().flex_1())
+      .child(div().text_size(T.tiny).text_color(k.muted).child(`${list.length} match${list.length === 1 ? "" : "es"}`));
     const grid = v_virtual_list("stage-grid", rows.length, ROW_H, (r) => String(r), (range) => {
       const out = [];
       for (let r = range.start; r < range.end; r++)
         out.push(h_flex().h(ROW_H).px(PAD).gap(GAP).items_start().children(rows[r].map((i) => this.card(k, list[i], i, w))));
       return out;
     }).track_scroll(this.scroll).size_full()
-      .on_item_click((rowKey, cx) => this.click(rowKey, list, rows, cx));
+      .on_item_click((rowKey, cx) => { if (this.find) { this.find.sel = Number(rowKey); this.handle.focus(); return cx.notify(); } this.click(rowKey, list, rows, cx); });
     const body = div().relative().flex_1().min_h(0).w_full().pt(PAD)
       .on_mouse_down("left", (e) => { const z = Number(settings().zoom) || 1; this.downX = (e.local_position?.x ?? e.position?.x ?? 0) / z; })
       .child(grid)
       .child(Scrollbar.vertical("stage-grid").absolute().inset_0());
-    const foot = div().px(18).py(8).border_t(1).border_color(k.border).text_size(T.tiny).text_color(k.idle)
-      .child(this.error ? `Couldn't read agents: ${this.error}` : !this.loaded ? "Reading agents…" : "h j k l move · ↵ go to space · q close");
-    return root.child(header).child(body).child(foot);
+    const foot = div().px(18).py(8).border_t(1).border_color(k.border).text_size(T.tiny).text_color(k.muted)
+      .child(this.error ? `Couldn't read agents: ${this.error}` : !this.loaded ? "Reading agents…" : this.find ? "type to filter · ⌃n ⌃p move · ↵ go · esc back" : "h j k l move · / search · ↵ go to space · q close");
+    return root.child(header).when(Boolean(prompt), (el) => el.child(prompt)).child(body).child(foot);
   }
 }

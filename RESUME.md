@@ -1,5 +1,18 @@
 # Resume point (update this before handing off)
 
+## 2026-11-08 (night): order, nesting, search, non-agent panes, Codex design pass
+- Order (core/order.js): blocked/your-move spaces first, then score = decayed dwell minutes + 5 per switch +
+  up to 60 for recent activity (half-life 72h). Presence is recorded by Stage itself in shared("stage.presence"),
+  only while a Stage pane is mounted (Herdr keeps no focus history). Order recomputes on refresh (10s) only.
+- Nesting (core/nest.js): `hc label <t> stage.parent=<space name|id>` on any terminal in the child space.
+  Families start a new grid row (core/grid.js layoutRows); a high-ranked child lifts its family. Cycles drop.
+  Not tried with a real label yet (would touch the user's live terminals); unit-tested only.
+- Search (core/search.js): `/` opens a Telescope-style fuzzy filter, one column, matched letters highlighted;
+  ctrl-n/p or arrows, Enter goes, Esc back. Seam: stage-test.json {"find": "q"} in a test home.
+- Cards also list non-agent panes (adapter otherOf): dashboards (mod panes), processes, shells. The stage
+  pane itself is excluded.
+- Codex (sdd, effort high) did the visual pass: surfaces/tints in themes.js, nest connector. Modest change.
+
 ## 2026-11-08 (latest): Stage pane is a card grid; roles dropped
 - User disliked the list + proxy/orchestrator rows. mod/main.js now draws every space as a fixed-height card
   (name, folder/branch, counts, top 2 agents with their ask or line, +N more) in a grid sized from the pane width.

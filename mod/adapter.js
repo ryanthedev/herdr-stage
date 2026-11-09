@@ -49,6 +49,14 @@ async function summaries() {
   try { return JSON.parse((await readTextFile(`${home()}/.cache/herdr-stage/summaries.json`)) ?? "{}"); } catch { return {}; }
 }
 
+// A pane that isn't an agent: { kind: "mod" | "shell" | "process", label, detail, tab, pane }.
+function otherOf(p, tab) {
+  const short = (d) => (d || "").replace(/^\/Users\/[^/]+/, "~");
+  if (!p.terminal) return { kind: "mod", label: p.title || p.mod, detail: p.mod, tab, pane: p.pane };
+  const shell = p.program?.shell || p.program?.key === "shell";
+  return { kind: shell ? "shell" : "process", label: shell ? p.program?.name || "shell" : p.program?.name || p.title, detail: short(p.cwd), tab, pane: p.pane };
+}
+
 export async function gather() {
   const sp = spaces(), ag = agents(), ps = panes(), terms = terminals(), sum = await summaries();
   const out = [];
@@ -70,7 +78,11 @@ export async function gather() {
         msg: m.msg, at: m.at ?? null, first: m.first, ask: m.ask ?? null, question: m.question ?? null,
         recap: fresh?.recap ?? null, yourMove: fresh?.yourMove ?? null, text: m.text ?? null, parent: a.parent ?? null };
     })());
-    return { id: s.id, name: s.name, folder, git: await gitOf(folder, s.machine), agents: list };
+    // Everything else in the space: mod panes (dashboards like herdr-md or draw), shells and other processes.
+    const tabName = Object.fromEntries(s.tabs.map((t) => [t.id, t.name]));
+    const others = ps.filter((p) => tabIds.has(p.tab) && p.mod !== "stage" && !listed.has(p.terminal) && !(p.status || p.program?.agent))
+      .map((p) => otherOf(p, tabName[p.tab]));
+    return { id: s.id, name: s.name, folder, git: await gitOf(folder, s.machine), agents: list, others };
   })());
   return { spaces: out };
 }

@@ -1,6 +1,6 @@
 // The stage view-model: one card per space, the "your move" lane. Pure: hosts pass plain objects.
 //
-// input: { spaces: [{ id, name, folder, git: {branch, worktrees, branches}|null,
+// input: { spaces: [{ id, name, folder, git: {branch, worktrees, branches}|null, others: [{ kind, label, detail, tab, pane }],
 //                     agents: [{ addr, pane, tab, label, state, msg, at, ask, question, recap, yourMove, first }] }] }
 import { moveOf, clean } from "./asks.js";
 
@@ -22,7 +22,13 @@ export function buildStage({ spaces }, { top = 3 } = {}) {
     const g = s.git;
     const facts = [s.folder?.replace(/^\/Users\/[^/]+/, "~") || "~", g ? `⎇ ${g.branch}` : "no repo yet",
       g && g.worktrees > 1 ? `${g.worktrees} worktrees` : null, g && g.branches > 1 ? `${g.branches} branches` : null].filter(Boolean);
-    return { id: s.id, name: s.name, loose: !g, facts, counts, rows, top: rows.slice(0, top), more: Math.max(0, rows.length - top), hasMove: counts.move > 0 };
+    // Non-agent panes: dashboards (mods) first, then running processes, then plain shells.
+    const KIND = { mod: 0, process: 1, shell: 2 };
+    const others = [...(s.others ?? [])].sort((x, y) => KIND[x.kind] - KIND[y.kind]);
+    counts.mods = others.filter((o) => o.kind === "mod").length;
+    counts.shells = others.filter((o) => o.kind === "shell").length;
+    counts.procs = others.filter((o) => o.kind === "process").length;
+    return { id: s.id, name: s.name, loose: !g, facts, counts, rows, top: rows.slice(0, top), more: Math.max(0, rows.length - top), hasMove: counts.move > 0, others };
   });
   // Spaces with a repo first, then the ones without a space yet; the order inside each stays the space order.
   const ordered = [...cards.filter((c) => !c.loose), ...cards.filter((c) => c.loose)];

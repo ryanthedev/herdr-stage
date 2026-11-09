@@ -17,7 +17,7 @@ test("cards: repo spaces first, counts, facts, top rows with the move first", ()
   const vm = buildStage(input);
   assert.deepEqual(vm.cards.map((c) => c.name), ["upublish", "life", "demo"]);
   const u = vm.cards[0];
-  assert.deepEqual(u.counts, { move: 1, working: 1, idle: 2 });
+  assert.deepEqual(u.counts, { move: 1, working: 1, idle: 2, mods: 0, shells: 0, procs: 0 });
   assert.deepEqual(u.facts, ["~/repos/upublish", "⎇ main", "3 worktrees", "9 branches"]);
   assert.equal(u.top[0].addr, "t2"); assert.equal(u.more, 1);
   assert.equal(vm.cards[2].loose, true);
@@ -51,4 +51,13 @@ test("transcript: last assistant text from a tail that starts mid-line", () => {
   const tail = 'ial line"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"first"}]}}\n{"type":"user"}\n{"type":"assistant","timestamp":"T","message":{"content":[{"type":"tool_use"},{"type":"text","text":"last"}]}}\n';
   assert.deepEqual(lastAssistantText(tail), { text: "last", at: "T" });
   assert.equal(transcriptRel("abc", "/Users/r/.config"), ".claude/projects/-Users-r--config/abc.jsonl");
+});
+
+test("stage: non-agent panes are kept and counted, dashboards first", async () => {
+  const { buildStage } = await import("../core/stage.js");
+  const vm = buildStage({ spaces: [{ id: "s", name: "dash", folder: "/x", git: null, agents: [],
+    others: [{ kind: "shell", label: "zsh" }, { kind: "mod", label: "herdr-md" }, { kind: "process", label: "nvim" }] }] });
+  const c = vm.cards[0];
+  assert.deepEqual(c.others.map((o) => o.label), ["herdr-md", "nvim", "zsh"]);
+  assert.deepEqual([c.counts.mods, c.counts.procs, c.counts.shells], [1, 1, 1]);
 });
