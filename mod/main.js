@@ -29,7 +29,7 @@ import { tierFor, rowView, rowHeight, statusOf, slotW, ROW, SIDE, BUBBLE_GAP } f
 import { track, prune, rank } from "./core/order.js";
 import { parentsOf, families, labelsOf } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
-import { MISSION as K } from "./themes.js";
+import { MISSION as K, machineColor } from "./themes.js";
 
 const MOD = "stage";
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
@@ -200,6 +200,16 @@ export default class Stage extends View {
       .child(div().h(51).overflow_hidden().font_family(K.read).text_size(T.msg).line_height("17px").text_color(need ? K.ink : K.ink2).child(this.message(i)));
   }
 
+  // Which machine a remote space lives on: a server icon and the machine's name in that machine's colour,
+  // right after the space name so it reads before anything else. Spaces on this computer get none.
+  machine(name) {
+    const color = machineColor(name);
+    return h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded(6).bg(color + "2E")
+      .border(1).border_color(color + "99").font_family(this.font).text_size(T.status).font_weight(600)
+      .child(div().text_color(color).child("\uf233"))
+      .child(div().max_w(140).truncate().text_color(color).child(name));
+  }
+
   // The name, with the characters a search matched drawn in the accent.
   title(name, hits) {
     if (!hits?.length) return div().min_w(0).truncate().text_size(T.name).font_weight(600).text_color(K.ink).child(name);
@@ -219,6 +229,7 @@ export default class Stage extends View {
     const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = slotW(tier, w, indent);
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
+      .when(Boolean(live.machine), (el) => el.child(this.machine(live.machine)))
       // Too narrow for the chip line (xs): the status icon sits after the name instead.
       .when(tier === "xs", (el) => el.child(this.status(c, live)))
 
@@ -269,7 +280,7 @@ export default class Stage extends View {
       const c = this.byId[e.id];
       return { id: e.id, fields: [
         { key: "name", text: e.space.name, weight: 2 },
-        { key: "where", text: [c?.facts[0], e.space.branch].filter(Boolean).join(" ") },
+        { key: "where", text: [e.space.machine, c?.facts[0], e.space.branch].filter(Boolean).join(" ") },
         { key: "agents", text: (c?.rows ?? []).map((r) => `${r.label} ${r.move ?? r.line ?? ""}`).join(" "), weight: 0.6 },
         { key: "panes", text: (c?.others ?? []).map((o) => o.label).join(" "), weight: 0.6 },
       ] };

@@ -1,5 +1,16 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09 (midday): remote machines on the Stage
+- Remote machines now exist (`hc machine ls`: ska connected; vana being set up). spaces() gives each space
+  `machine` (the machine's name, null = this computer). Stage draws a server-icon pill with that name, in the
+  machine's own colour (themes.js machineColor, hashed from the name: ska violet), right after the space name,
+  at every width. Local spaces get no pill. `/` search matches the machine name too.
+- Palette avoids pink (needs-you) and leads with cool hues; gold is only the 4th machine's.
+- Verified in an isolated test window (search seam {"find":"ska"}). Not yet installed into the main Herdr.
+- Known gap: Claude agents on a remote machine get no bubble message/title, because adapter messageOf reads
+  transcripts from this Mac's ~/.claude (they live on the remote machine).
+- Test-home gotcha: settings.json `sounds` is an object; set sounds.enabled=false, not sounds=false.
+
 ## 2026-11-09 (morning): city background, one opacity everywhere
 - Background: ~/.config/herdr-app/backgrounds/cityscape.png (Codex image), now on the layout's "work" column so it
   sits behind the tab bar and status bar too. terminal_opacity 0.3. Focus frame mint #B0EFB5, 2px.
@@ -140,7 +151,7 @@ Test seam: stage-test.json in an isolated home's root ({"space","sel","drawer","
 ## How to test natively without touching the user's Herdr
 1. `rsync -a --exclude telemetry --exclude '*.bak*' --exclude shared.json --exclude window.json
    --exclude windows.json --exclude mods/mobile-bridge --exclude '*.sock' ~/.config/herdr-app/ <scratch>/herdr-test2/`
-   then set sounds off in its settings.json and drop the mobile-bridge block from layouts/matrix.json.
+   then set sounds.enabled false in its settings.json and drop the mobile-bridge block from layouts/matrix.json.
 2. Short path (unix socket limit ~104 chars): `ln -sfn <scratch>/herdr-test2 ~/.cache/hst`
 3. Launch in background with Claude's session env stripped (the `env -u` line in `CLAUDE.md`; never launch Herdr from a Claude shell without it)
 4. `HERDR_APP_HOME=~/.cache/hst ./scripts/install.sh`, then `herdr-app do mod.open '{"name":"stage"}'`,

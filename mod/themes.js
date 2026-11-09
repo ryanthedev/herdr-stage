@@ -22,6 +22,15 @@ export const MISSION = {
   read: "SF Pro Text",
 };
 
+// Remote machines: each gets its own colour for its badge, picked from its name so it never changes.
+// Cool hues kept apart from mint (working), pink (needs you) and the sky-blue titles. Local spaces get no badge.
+const MACHINE_HUES = ["#9FE6FF", "#C3A6FF", "#E59CFF", "#F2DC7A"];
+export function machineColor(name) {
+  let h = 0;
+  for (const ch of String(name ?? "")) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return MACHINE_HUES[h % MACHINE_HUES.length];
+}
+
 const tint = (c, a, fallback) => (/^#[0-9a-f]{6}$/i.test(c ?? "") ? c + a.toString(16).padStart(2, "0") : fallback);
 
 export function tokens(t, name) {
