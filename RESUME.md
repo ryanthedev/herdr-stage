@@ -7,6 +7,14 @@
   Stage and the tabs / my-status / pane mods paint 1 - (1 - op)^2 to match. Those three mods are in
   ~/.config/herdr-app/mods, which ~/.config's git ignores: no backup exists.
 - Bubble titles pale ice blue (#A9DDF0); no accent bar on asks. User dislikes peach/warm titles and teal edges.
+- Later the same morning: opacity back to 0.5 ("keep the darker view"); pane frames 2px both focused and not (a
+  thicker focus frame resized Stage and re-split its bubbles). Bubbles opaque, titles sky blue #7FB5FF,
+  needs-you neon pink #FF6FA3. Status is an icon chip (Nerd Font: bell/spinner/check/moon), no words, no "active".
+  Branch/folder are chips; the folder chip hides when it equals the space name.
+- Titles: Claude Code's ai-title is written once and never changes, so a bubble's title is now your last real
+  prompt (core/transcript.js lastUserPrompt + titleOf), grepped from the whole transcript (prompts can sit far
+  above the 64 KB tail). Raw prompts make rough titles; the summary job could write proper 3-6 word ones once
+  the usage governor allows it.
 
 ## 2026-11-09: transparent; default width blocked on Herdr
 - Stage draws no ground (no root bg): the pane frame and layout background (matrix rain) show through like the
