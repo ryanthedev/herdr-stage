@@ -50,6 +50,7 @@ test("keys walk machine -> folder -> start -> create, esc steps back", () => {
   assert.deepEqual(r.effect, { scan: "ska" });
   assert.equal(r.st.step, "folder");
   const fs = folderRows({ home: "/h", dirs: ["/h/api"] });
+  assert.deepEqual(nextOpen(r.st, "right", fs).effect, { expand: "/h/api" });
   r = nextOpen(r.st, "tab", fs);
   assert.deepEqual(r.effect, { expand: "/h/api" });
   assert.equal(r.st.query, "~/api/");

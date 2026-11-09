@@ -346,7 +346,7 @@ export default class Stage extends View {
   }
 
   openAct(r, rows, cx) {
-    const picked = rows[r.st.sel] ?? null, step = this.open.step;
+    const picked = rows[this.open.sel] ?? null, step = this.open.step; // the row Enter was on, before the step changed
     this.open = r.st;
     if (r.effect?.close) this.open = null;
     if (r.effect && "scan" in r.effect) this.scanFolders(r.effect.scan, cx);
@@ -477,7 +477,7 @@ export default class Stage extends View {
       .child(div().flex_none().text_color(this.error ? this.need : K.accent).child("●"))
       .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
-      .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.open ? (this.open.step === "folder" ? "↵ next · tab inside · esc back" : "↵ next · esc back")
+      .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.open ? (this.open.step === "folder" ? "↵ next · tab/→ inside · esc back" : "↵ next · esc back")
         : this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · n new · q")));
     // While picking a new space the field is that step's filter; its placeholder says what to type.
     const typing = this.open ?? this.find;

@@ -98,7 +98,8 @@ function filter(rows, query, text) {
 // Keys. st: { step, query, sel, machine, folder }. rows: the current step's rows.
 // -> { st, effect } with effect { close } | { scan: machine } | { expand: path } | { create: args } | null.
 export function nextOpen(st, key, rows, mods = {}) {
-  if (key === "tab" || key === "Tab") {
+  // Tab, or → (in case the app keeps Tab for itself), lists the selected folder's subfolders.
+  if (key === "tab" || key === "Tab" || key === "right" || key === "ArrowRight") {
     const r = rows[st.sel];
     if (st.step !== "folder" || !r) return { st, effect: null };
     return { st: { ...st, query: r.label.replace(/\/?$/, "/"), sel: 0 }, effect: { expand: r.path } };
