@@ -280,8 +280,10 @@ export default class Stage extends View {
     // The same ground as your terminals: the theme's terminal background at the layout's terminal_opacity,
     // so whatever the layout paints behind panes shows through Stage exactly as it does through a terminal.
     this.need = theme().accent ?? K.need;
-    const op = Number(layout()?.terminal_opacity ?? settings().terminal_opacity ?? 1);
-    const ground = tint(theme().background, Math.round(Math.max(0, Math.min(1, op)) * 255), K.bg);
+    // Herdr stacks two layers at that opacity under a terminal (measured: a terminal shows the square of what
+    // one layer shows), so Stage paints their combined cover, 1 - (1 - op)^2, to match.
+    const op = Math.max(0, Math.min(1, Number(layout()?.terminal_opacity ?? settings().terminal_opacity ?? 1)));
+    const ground = tint(theme().background, Math.round((1 - (1 - op) ** 2) * 255), K.bg);
     const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(ground).text_color(K.ink).font_family(this.font)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {

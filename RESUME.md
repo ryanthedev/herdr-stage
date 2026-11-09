@@ -1,5 +1,13 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09 (morning): city background, one opacity everywhere
+- Background: ~/.config/herdr-app/backgrounds/cityscape.png (Codex image), now on the layout's "work" column so it
+  sits behind the tab bar and status bar too. terminal_opacity 0.3. Focus frame mint #B0EFB5, 2px.
+- Gotcha: a terminal stacks TWO layers at terminal_opacity (measured: it shows the square of what one layer shows).
+  Stage and the tabs / my-status / pane mods paint 1 - (1 - op)^2 to match. Those three mods are in
+  ~/.config/herdr-app/mods, which ~/.config's git ignores: no backup exists.
+- Bubble titles pale ice blue (#A9DDF0); no accent bar on asks. User dislikes peach/warm titles and teal edges.
+
 ## 2026-11-09: transparent; default width blocked on Herdr
 - Stage draws no ground (no root bg): the pane frame and layout background (matrix rain) show through like the
   terminals; bubbles/field are translucent (themes.js MISSION alpha values).
