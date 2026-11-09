@@ -1,5 +1,16 @@
 # Resume point (update this before handing off)
 
+## 2026-11-08 (latest): Stage pane is a card grid; roles dropped
+- User disliked the list + proxy/orchestrator rows. mod/main.js now draws every space as a fixed-height card
+  (name, folder/branch, counts, top 2 agents with their ask or line, +N more) in a grid sized from the pane width.
+- Keys: core/grid.js nextGrid (h/l along a row, j/k a row, g/G, enter, q); colsFor/rowOf/rowsFor. Tests in test/grid.test.mjs.
+- Scrolling: the grid is a v_virtual_list of rows with a VirtualListScrollHandle; moving the selection calls
+  scroll_to_item(row). Virtual-list renderers can't hold handlers, so clicks = wrapper mouse-down (column) +
+  on_item_click (row key): single click selects, Enter opens.
+- Removed: core/roles.js, ROLES.md, core/list.js and their tests. Proxy bar and "led by" lines are gone.
+- Verified: renders in an isolated test window (14 spaces, 2 columns, overflow). NOT verified by hand: hjkl and
+  scroll-follow (no key automation allowed). Not installed into the main Herdr.
+
 ## 2026-11-08 (later): Stage is now a side pane, not a popup
 - User found the popup ugly and asked for a side pane they can move focus into, like herdr-md. v1 shows only
   the list of all spaces: mod/main.js (pane view, "focusable": true), core/list.js (j/k/g/G/enter/q reducer).
