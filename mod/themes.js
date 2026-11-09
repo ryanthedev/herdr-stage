@@ -2,7 +2,17 @@
 // your-move; "noir" is the POC's neon noir (~/.design-loop/herdr/r2/poc.html, body[data-theme="noir"]).
 // GPUI has no letter-spacing, text glow or coloured shadows, so noir trades them for uppercase headings in a
 // condensed face, heavier weight, tinted selection bands and neon borders.
-export const THEMES = ["default", "noir"];
+export const THEMES = ["mission", "default", "noir"];
+
+// Heel's Mission Control palette (~/repos/herdr-mobile, Skins/MissionSkin.swift): graphite surfaces, one
+// mint accent, amber only for what needs you. Fixed, like Heel; it doesn't follow the Herdr theme.
+export const MISSION = {
+  bg: "#101412", surface: "#1A201C", raised: "#2B342C", field: "#242D26", rule: "#303A34", ruleSoft: "#303A3480",
+  ink: "#ECF0EB", ink2: "#94A198", ink3: "#79867C",
+  accent: "#B0EFB5", onAccent: "#15261A", amber: "#E8BC7F", needBg: "#2A2619", needLine: "#E8BC7F59",
+  done: "#8FB894", idle: "#7A867C", selBg: "#161C18",
+  sans: null, mono: "SF Mono",
+};
 
 const tint = (c, a, fallback) => (/^#[0-9a-f]{6}$/i.test(c ?? "") ? c + a.toString(16).padStart(2, "0") : fallback);
 

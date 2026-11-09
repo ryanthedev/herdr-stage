@@ -1,5 +1,16 @@
 # Resume point (update this before handing off)
 
+## 2026-11-09: Stage follows Heel's overview (user: "more of that route")
+- Look and anatomy come from Heel (~/repos/herdr-mobile, .design-loop/heel-bulky/r0/directions-v4.html,
+  Skins/MissionSkin.swift): graphite ground, mint for working, amber only for needs-you; rows on the ground
+  split by hairlines (no cards); header = name + status word; mono meta line; one message bubble per item
+  ([tab chip] name · time / session title / message), needs-you first; bottom = status line + "Jump to a
+  space" field (/ focuses it). No big header. Palette: MISSION in mod/themes.js (fixed, like Heel).
+- Screen previews removed (Heel's call: show what the space needs from you, not raw terminal lines).
+- core/rows.js tiers now: wide >= 420 (bubbles as many as fit, +N), s >= 300 (one bubble), xs (name line).
+- Heel never-list applies here too: no agent icons on spaces, no activity bars, no bare numbers without a
+  label, no selected-tab states.
+
 ## 2026-11-08 (late): one space per row, adapting to width
 - User rejected every card style (the 4 dealt directions in .design-foundations/dna/stage-pane/sheet.html and
   Codex's pass). Asked instead for: each space a full row, its items as mini thumbnails, less info as the pane
