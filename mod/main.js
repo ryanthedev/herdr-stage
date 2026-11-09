@@ -21,7 +21,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { theme, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome } from "herdr";
+import { theme, layout, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
@@ -142,10 +142,10 @@ export default class Stage extends View {
     return out;
   }
 
-  // The status word after a space's name, with its dot: amber "needs you", mint "working", sage "done".
+  // The status word after a space's name, with its dot: accent "needs you", mint "working", sage "done".
   status(c, live) {
     const word = statusOf(c, live.status);
-    const color = word === "needs you" ? K.amber : word === "working" ? K.accent : word === "done" ? K.done : K.ink3;
+    const color = word === "needs you" ? this.need : word === "working" ? K.accent : word === "done" ? K.done : K.ink3;
     return h_flex().flex_none().gap(5).items_center()
       .child(word === "idle" || word === "empty" ? div().size(7).rounded(4).border(1).border_color(color) : div().size(7).rounded(4).bg(color))
       .child(div().text_size(T.status).text_color(color).child(word));
@@ -171,7 +171,7 @@ export default class Stage extends View {
   }
 
   // One item as a message bubble: title with its age on the right, then up to three lines of message.
-  // An ask is the same bubble with its message in amber: no brown fill, no frame.
+  // An ask is the same bubble with its message in full ink and a thin accent bar.
   bubble(i, w) {
     const need = Boolean(i.move);
     const title = i.kind === "agent" ? i.title || i.label : i.label;
@@ -180,7 +180,9 @@ export default class Stage extends View {
       .child(h_flex().flex_none().h(19).gap(8).items_center().min_w(0)
         .child(div().flex_1().min_w(0).truncate().text_size(T.title).font_weight(600).text_color(K.ink).child(title || ""))
         .when(Boolean(i.at), (el) => el.child(div().flex_none().font_family(this.font).text_size(T.meta).text_color(K.ink3).child(ago(i.at)))))
-      .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.amber : K.ink2).child(this.message(i)));
+      // An ask reads in full-strength ink with a thin accent bar; other messages are secondary ink.
+      .when(need, (el) => el.border_l(2).border_color(this.need))
+      .child(div().h(51).overflow_hidden().text_size(T.msg).line_height("17px").text_color(need ? K.ink : K.ink2).child(this.message(i)));
   }
 
   // The name, with the characters a search matched drawn in the accent.
@@ -276,7 +278,12 @@ export default class Stage extends View {
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
     // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
     this.font = String(settings().font || settings().font_family || K.mono);
-    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().text_color(K.ink).font_family(this.font)
+    // The same ground as your terminals: the theme's terminal background at the layout's terminal_opacity,
+    // so whatever the layout paints behind panes shows through Stage exactly as it does through a terminal.
+    this.need = theme().accent ?? K.need;
+    const op = Number(layout()?.terminal_opacity ?? settings().terminal_opacity ?? 1);
+    const ground = tint(theme().background, Math.round(Math.max(0, Math.min(1, op)) * 255), K.bg);
+    const root = v_flex().id(`stage-${this.uid}`).track_focus(this.handle).size_full().bg(ground).text_color(K.ink).font_family(this.font)
       // Sizes arrive multiplied by the app's zoom; layout math is in the mod's own px.
       .on_size_change((size, cx) => {
         const z = Number(settings().zoom) || 1, nw = size.width / z;
@@ -301,7 +308,7 @@ export default class Stage extends View {
     // The bottom, as in Heel: a status line, then one rounded field to jump to a space (/ focuses it).
     const working = Object.values(this.byId).reduce((n, c) => n + (c.counts.working || 0), 0);
     const status = h_flex().px(SIDE + 6).pb(7).gap(10).font_family(this.font).text_size(T.meta).text_color(K.ink3)
-      .child(div().flex_none().text_color(this.error ? K.amber : K.accent).child("●"))
+      .child(div().flex_none().text_color(this.error ? this.need : K.accent).child("●"))
       .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
       .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · q")));
