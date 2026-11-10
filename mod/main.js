@@ -21,7 +21,7 @@
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, VirtualListScrollHandle, Scrollbar } from "gpui-base";
-import { theme, layout, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome, exec, hc } from "herdr";
+import { theme, layout, run, spaces, panes, focused, nextCommand, settings, terminals, agents, shared, setShared, readTextFile, appHome, exec, hc, props } from "herdr";
 import { gather } from "./adapter.js";
 import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
@@ -45,6 +45,12 @@ const KEYS = [
 ];
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
 const T = { meta: 10, msg: 13, title: 13.5, status: 12, name: 16, field: 14 };
+// Motion is costly: every Herdr redraw repaints the whole window, so anything that animates sets the window's
+// frame rate. A .loop() runs at ~30 fps and held Herdr at ~25% CPU (measured 2026-11-09, ~3% without it).
+// So Stage animates only with .frames() on one shared, slow tick (~2 redraws a second, ~+2% CPU).
+const TICK = 500;
+const HOURGLASS = ["", "", ""];
+const SCANNING = ["scanning for repos", "scanning for repos.", "scanning for repos..", "scanning for repos..."];
 
 function ago(iso) {
   if (!iso) return "";
@@ -70,10 +76,16 @@ export default class Stage extends View {
     this.scroll = VirtualListScrollHandle.new();
     this.handle = cx.focus_handle();
     this.keysHelp = new Help(KEYS, { title: "Stage keys", mod: MOD });
-    this.handle.focus();
-    cx.timer.after(60, () => this.handle.focus());
+    // Docked: a layout block ({"mod": "stage", "props": {"dock": true}}) rather than a pane. It stays up
+    // across tabs and spaces, so it must not take the keyboard when it starts (that would pull focus off
+    // your terminal at every launch and reload); pane.go (cmd-h/l) brings the keyboard to it instead.
+    this.dock = Boolean(props()?.dock);
+    if (!this.dock) {
+      this.handle.focus();
+      cx.timer.after(60, () => { this.handle.focus(); this.watchFocus(cx); });
+    }
     // cmd-g in a tab that already shows a stage: this new copy hands focus to that one and closes itself.
-    cx.timer.after(40, () => {
+    if (!this.dock) cx.timer.after(40, () => {
       const tab = focused()?.tab, mine = panes().filter((p) => p.mod === MOD && p.tab === tab);
       const me = mine.find((p) => p.focused), other = mine.find((p) => !p.focused);
       if (me && other) { run("pane.focus", { pane: other.pane }); run("pane.close", { pane: me.pane }); }
@@ -84,7 +96,8 @@ export default class Stage extends View {
       for (;;) {
         const c = await nextCommand();
         if (c !== "focus") continue;
-        cx.timer.after(60, () => { if (panes().find((p) => p.focused)?.mod === MOD) this.handle.focus(); cx.notify(); });
+        // A dock is not a pane, so panes() can't say it's the target; "focus" reaching it is the signal.
+        cx.timer.after(60, () => { if (this.dock || panes().find((p) => p.focused)?.mod === MOD) this.handle.focus(); this.watchFocus(cx); cx.notify(); });
       }
     });
     this.refresh(cx);
@@ -127,7 +140,38 @@ export default class Stage extends View {
     });
   }
 
-  go(sp) { if (sp) run("space.select", { id: sp.id }); }
+  go(sp, cx) {
+    if (!sp) return;
+    run("space.select", { id: sp.id });
+    if (this.dock) this.handBack(cx, sp.id);
+  }
+
+  // Docked, Enter and Esc give the keyboard back to the space's focused pane, the way leaving a pane would.
+  // After Enter that must be the *new* space's pane: focusing the pane that was focused when Enter was
+  // pressed selects its space again, undoing the switch. So wait until the switch has landed (up to ~1 s)
+  // and hand back to whatever is focused then; if it never lands, leave the keyboard where it is.
+  handBack(cx, spaceId = null, tries = 12) {
+    const f = focused();
+    if (spaceId && f?.space !== spaceId) {
+      if (tries > 0) cx.timer.after(80, () => this.handBack(cx, spaceId, tries - 1));
+      return;
+    }
+    if (f?.pane) run("pane.focus", { pane: f.pane });
+  }
+
+  // GPUI tells a plain element nothing when it loses the keyboard, and moving it to or from a dock changes no
+  // pane, so while Stage holds the keyboard it looks again every TICK and redraws once when that ends (the
+  // selection band must not linger). A look that finds nothing changed draws nothing.
+  watchFocus(cx) {
+    if (this.watching) return;
+    this.watching = true;
+    const look = () => cx.timer.after(TICK, () => {
+      if (this.handle.is_focused()) return look();
+      this.watching = false;
+      cx.notify();
+    });
+    look();
+  }
 
   // Note where you are now (called on refresh and whenever the shown space changes); saved on refresh.
   presence(save) {
@@ -164,15 +208,15 @@ export default class Stage extends View {
 
   // The status word after a space's name, with its dot: accent "needs you", mint "working", sage "done".
   // A space's status as an icon chip, no words: Nerd Font glyphs (your font is a Nerd Font) in the status
-  // colour on a faint tint of it. Pink bell = needs you, mint spinner (pulsing) = working, sage check = done,
+  // colour on a faint tint of it. Pink bell = needs you, mint hourglass (turning) = working, sage check = done,
   // grey moon = idle, grey ring = empty.
   status(c, live) {
     const word = statusOf(c, live.status);
-    const [glyph, color] = ({ "needs you": ["\uf0f3", this.need], working: ["\uf110", K.accent], done: ["\uf00c", K.done],
+    const [glyph, color] = ({ "needs you": ["\uf0f3", this.need], working: ["\uf251", K.accent], done: ["\uf00c", K.done],
       idle: ["\uf186", K.ink3], empty: ["\uf10c", K.ink3] })[word] ?? ["\uf10c", K.ink3];
     const icon = div().text_color(color).child(glyph);
     return h_flex().flex_none().h(ROW.meta).w(26).justify_center().items_center().rounded(5).bg(color + "26")
-      .child(word === "working" ? icon.loop("opacity", { from: 0.35, to: 1, period: 1400 }) : icon);
+      .child(word === "working" ? div().text_color(color).frames(HOURGLASS, TICK) : icon);
   }
 
   // The line under the name: where the space lives as two chips (branch, folder), then nested-under and the
@@ -251,7 +295,8 @@ export default class Stage extends View {
   }
 
   // One space as a row: header line, meta line, bubbles. No card: rows sit on the ground, split by a hairline.
-  // `on`: the keyboard selection, shown only while this pane has the keyboard, as a slow pulse behind the row.
+  // `on`: the keyboard selection, shown only while this pane has the keyboard, as a steady tint behind the row
+  // (not a pulse: see TICK).
   row(e, on, tier, w) {
     const live = e.space, c = this.byId[live.id], v = rowView(c, tier, w);
     const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = slotW(tier, w, indent);
@@ -263,7 +308,7 @@ export default class Stage extends View {
 
       .child(div().flex_1());
     const body = v_flex().h(rowHeight(c, tier)).w_full().pl(SIDE + indent).pr(SIDE).justify_center().relative()
-      .when(on, (el) => el.child(div().absolute().inset_0().bg(K.pulse).loop("opacity", { from: 0.25, to: 1, period: 1800 })))
+      .when(on, (el) => el.child(div().absolute().inset_0().bg(K.sel)))
       .when(Boolean(e.depth), (el) => el.child(div().absolute().left(SIDE + indent - 10).top(0).h(22).w(1).bg(K.rule))
         .child(div().absolute().left(SIDE + indent - 10).top(22).w(6).h(1).bg(K.rule)))
       .child(head);
@@ -286,8 +331,11 @@ export default class Stage extends View {
     this.sel = r.sel;
     this.selId = list[this.sel]?.id ?? null;
     if (this.sel !== before) this.scroll.scroll_to_item(this.sel);
-    if (r.effect?.open !== undefined) this.go(list[r.effect.open]?.space);
-    if (r.effect?.close) { const me = panes().find((p) => p.focused && p.mod === MOD); if (me) run("pane.close", { pane: me.pane }); }
+    if (r.effect?.open !== undefined) this.go(list[r.effect.open]?.space, cx);
+    if (r.effect?.close) {
+      if (this.dock) this.handBack(cx);
+      else { const me = panes().find((p) => p.focused && p.mod === MOD); if (me) run("pane.close", { pane: me.pane }); }
+    }
     cx.stop_propagation(); cx.notify();
   }
 
@@ -300,7 +348,7 @@ export default class Stage extends View {
     this.find = { query: r.query, sel: r.sel };
     if (moved) this.scroll.scroll_to_item(r.sel);
     const pick = list[r.effect?.open ?? r.sel];
-    if (r.effect?.open !== undefined) { this.find = null; this.selId = pick?.id ?? this.selId; this.go(pick?.space); }
+    if (r.effect?.open !== undefined) { this.find = null; this.selId = pick?.id ?? this.selId; this.go(pick?.space, cx); }
     if (r.effect?.close) { this.find = null; if (pick) this.selId = pick.id; }
     cx.stop_propagation(); cx.notify();
   }
@@ -402,7 +450,7 @@ export default class Stage extends View {
           .child(div().text_color(K.ink3).child("\uf07b")).child(div().min_w(0).truncate().text_size(T.status).text_color(K.ink2).child(tilde(o.folder))))))
       .child(h_flex().gap(8).items_center().text_size(T.status).text_color(K.ink3)
         .child(div().text_color(K.title).font_weight(600).child(ask))
-        .when(o.step === "folder" && sc?.status === "loading", (el) => el.child(div().loop("opacity", { from: 0.35, to: 1, period: 1400 }).child("scanning for repos…")))
+        .when(o.step === "folder" && sc?.status === "loading", (el) => el.child(div().frames(SCANNING, TICK)))
         .when(o.step === "folder" && sc?.status === "error", (el) => el.child(div().text_color(this.need).truncate().child(`couldn't scan: ${sc.error}`)))
         .when(o.step === "machine" && !this.openMachines, (el) => el.child(div().child("reading machines…"))));
     const N = 40, start = Math.max(0, Math.min(o.sel - Math.floor(N / 2), rows.length - N));
@@ -461,7 +509,7 @@ export default class Stage extends View {
     const rows = list.map((_, i) => [i]);
     // Highlight only while this pane has the keyboard; otherwise nothing is selected-looking.
     // Reading panes() here also redraws the pane when focus moves elsewhere (it is live data).
-    const active = this.handle.is_focused() && panes().find((p) => p.focused)?.mod === MOD;
+    const active = this.handle.is_focused() && (this.dock || panes().find((p) => p.focused)?.mod === MOD);
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
     // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
     this.font = String(settings().font || settings().font_family || K.mono);
@@ -489,7 +537,7 @@ export default class Stage extends View {
       .on_item_click((id, cx) => {
         const i = list.findIndex((e) => e.id === id);
         if (i >= 0) { this.sel = i; this.selId = id; if (this.find) this.find.sel = i; }
-        this.handle.focus(); cx.notify();
+        this.handle.focus(); this.watchFocus(cx); cx.notify();
       });
     const body = this.open ? this.openView(w) : div().relative().flex_1().min_h(0).w_full()
       .child(vlist)
@@ -516,7 +564,7 @@ export default class Stage extends View {
       // New space: the same picker as n.
       .when(!typing, (el) => el.child(h_flex().id("stage-new").flex_none().h(28).px(10).gap(6).items_center().rounded(14).bg(K.chip).cursor_pointer()
         .text_size(T.status).text_color(K.ink2).child(div().text_color(K.accent).child("\uf067")).when(tier !== "xs", (el) => el.child("New space"))
-        .on_click((_e, cx) => { this.startOpen(cx); this.handle.focus(); cx.notify(); })));
+        .on_click((_e, cx) => { this.startOpen(cx); this.handle.focus(); this.watchFocus(cx); cx.notify(); })));
     const bottom = v_flex().pt(8).border_t(1).border_color(K.rule).child(status).child(field);
     const help = this.keysHelp.panel({ bg: K.bg, surface: K.surface, border: K.rule, ink: K.ink, ink2: K.ink2, dim: K.ink3, accent: K.accent, warn: K.need, font: this.font, mono: this.font });
     return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom).when(Boolean(help), (el) => el.child(help));

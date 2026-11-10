@@ -16,7 +16,7 @@ export const MISSION = {
   accent: "#B0EFB5", onAccent: "#15261A",
   // Needs-you: neon pink, like the city's signs. Not teal (the user found the teal edges ugly), not amber/peach.
   need: "#FF6FA3",
-  done: "#8FB894", idle: "#7A867C", pulse: "#B0EFB518",
+  done: "#8FB894", idle: "#7A867C", sel: "#B0EFB518",
   sans: null, mono: "SF Mono",
   // Bubble message text: Apple's reading sans, smoother over three lines than the mono font.
   read: "SF Pro Text",

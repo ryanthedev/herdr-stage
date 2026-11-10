@@ -12,7 +12,10 @@ every agent that stops. Hexagonal: `core/` is plain JS with no Herdr, UI or Node
 - `core/stage.js`, `core/nav.js` the stage view-model and its keyboard behaviour (pure, tested)
 - `mod/` the Herdr skin: `adapter.js` (Herdr data, git, transcripts, summary cache), `themes.js` (colour and font
   tokens: default and neon noir, `t` switches) and `main.js` (drawing; canvas zoom `+` `-` `0` or cmd-scroll, scroll pans);
-  `scripts/install.sh` copies it plus `core/` into `~/.config/herdr-app/mods/stage`. Opens with cmd-g.
+  `scripts/install.sh` copies it plus `core/` into `~/.config/herdr-app/mods/stage`. Opens with cmd-g as a pane,
+  or docks: a layout block `{"mod": "stage", "props": {"dock": true}}` keeps it up across tabs and spaces (the
+  matrix layout has one, `stage-dock`). Docked it never takes the keyboard by itself; `pane.go` (cmd-l) moves in,
+  and Enter or Esc hands the keyboard back to the space's terminal.
 - `npm test` unit tests (no model calls)
 
 Mods share one script engine, and one mod running out of memory breaks every mod until Herdr restarts,
