@@ -33,11 +33,18 @@ so the adapter reads small transcript tails, one at a time, only for agents that
 | …and what to start. | |
 
 - `n` new space: `core/open.js` (machine, folder, program; tested) and the scan it runs on the machine.
+  A `~` folder is expanded on that machine; if no space appears within 5 s the status line says so.
+- Machine tabs (All · This Mac · each remote): Tab / Shift-Tab or click; each tab counts the spaces that
+  need you, the choice is remembered, and `/` still searches every machine. Hidden when every space is on
+  one machine. `core/machines.js` (tested).
+- Agent details for a remote space (title, last message) are read on that machine, like its git status.
 - `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
 
 ## Nesting a space under another
 
-Label any terminal in the child space; Stage shows the child indented under the parent:
+Label any terminal in the child space; Stage draws the parent and its children as one family: a shared
+mint-outlined panel, and a rail from the parent's status chip to a dot at each child's name
+(`familyMarks` in `core/nest.js`, tested; `NEST` in `mod/main.js` picks rail, panel or both):
 
 ```sh
 hc label <terminal> stage.parent=<parent space name or id>    # e.g. hc label vana/t9 stage.parent=devops

@@ -1,3 +1,5 @@
 node_modules/
 .DS_Store
 herdr-shot.png
+gpui-kit.d.ts
+.design-foundations/

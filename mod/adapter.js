@@ -30,21 +30,26 @@ async function gitOf(folder, machine) {
 
 // An agent's last message: terminal -> its process -> ~/.claude/sessions/<pid>.json -> transcript tail.
 // Cached until the terminal's status changes, so an idle fleet costs one `hc get` per agent per refresh.
-async function messageOf(addr) {
+// The files live where the agent runs: on another machine they're read there (exec on, its own $HOME),
+// since its pid and transcript mean nothing on this one.
+async function messageOf(addr, machine = null) {
   let d; try { d = JSON.parse((await hc(["get", addr])).stdout); } catch { return {}; }
   const pid = d.foreground?.pid, key = `${pid}:${d.status_ms}:${d.turn}`;
   const hit = msgCache.get(addr); if (hit?.key === key) return hit.data;
   const base = { msg: d.status?.msg ?? null, title: d.title ?? null, name: d.name ?? null };
   let data = base;
   try {
-    const meta = JSON.parse(await readTextFile(`${home()}/.claude/sessions/${pid}.json`));
-    const tail = await exec("tail", ["-c", String(TAIL_BYTES), `${home()}/${transcriptRel(meta.sessionId, meta.cwd)}`]);
+    const on = { on: machine };
+    const sess = await exec("sh", ["-c", 'cat "$HOME/.claude/sessions/$1.json"', "sh", String(pid)], on);
+    if (sess.code !== 0) throw new Error("no session");
+    const meta = JSON.parse(sess.stdout), rel = transcriptRel(meta.sessionId, meta.cwd);
+    const tail = await exec("sh", ["-c", 'tail -c "$1" "$HOME/$2"', "sh", String(TAIL_BYTES), rel], on);
     const last = tail.code === 0 ? lastAssistantText(tail.stdout) : null;
     // The title follows what you last asked; Claude's own title (base.title) is the fallback.
     // Prompts can sit far above the tail after a long turn, so grep the whole file for prompt lines only
     // (no tool results, no harness meta, none over 200 KB such as pasted images) and keep the last few.
-    const PROMPTS = `grep -E '"type":"(user|queue-operation)"' "$1" | grep -v '"tool_result"' | grep -v '"isMeta":true' | awk 'length($0) < 200000' | tail -n 4`;
-    const pr = await exec("sh", ["-c", PROMPTS, "sh", `${home()}/${transcriptRel(meta.sessionId, meta.cwd)}`]).catch(() => null);
+    const PROMPTS = `grep -E '"type":"(user|queue-operation)"' "$HOME/$1" | grep -v '"tool_result"' | grep -v '"isMeta":true' | awk 'length($0) < 200000' | tail -n 4`;
+    const pr = await exec("sh", ["-c", PROMPTS, "sh", rel], on).catch(() => null);
     const asked = pr?.code === 0 ? titleOf(lastUserPrompt(pr.stdout)?.text) : null;
     if (asked) data = { ...data, asked };
     if (last) data = { ...data, text: last.text, at: last.at, first: last.text.split("\n").find((l) => l.trim()) ?? "", ...extractAsk(last.text) };
@@ -124,7 +129,7 @@ export async function gather() {
     const list = [];
     for (const a of mine) list.push(await (async () => {
       // Working agents are read too, for the title; their message and ask wait until they stop.
-      const read = a.app === "claude-code" ? await messageOf(a.address) : {};
+      const read = a.app === "claude-code" ? await messageOf(a.address, s.machine ?? null) : {};
       const m = a.status !== "working" ? read : { asked: read.asked, title: read.title, name: read.name };
       const sm = sum[a.address], fresh = sm && sm.at === m.at ? sm : null;
       return { addr: a.address, pane: a.pane, tab: a.tab_name, label: m.name || a.title || m.title || a.address, state: a.status,

@@ -27,23 +27,28 @@ import { buildStage } from "./core/stage.js";
 import { nextGrid } from "./core/grid.js";
 import { tierFor, rowView, rowHeight, statusOf, slotW, ROW, SIDE, BUBBLE_GAP } from "./core/rows.js";
 import { track, prune, rank } from "./core/order.js";
-import { parentsOf, families, spaceIdOf } from "./core/nest.js";
+import { parentsOf, families, spaceIdOf, familyMarks } from "./core/nest.js";
 import { search, nextSearch } from "./core/search.js";
 import { MISSION as K, machineColor } from "./themes.js";
 import { Help } from "./help/help.js";
 import { SCAN, LIST, parseScan, machineRows, folderRows, startRows, nextOpen } from "./core/open.js";
+import { ALL, HERE, machineTabs, nextTab, onlyTab } from "./core/machines.js";
 
 const MOD = "stage";
 
 // Stage's keys for the ? overlay (herdr-help, ~/repos/herdr-help). Keep in step with key(), findKey() and
 // core/open.js nextOpen().
 const KEYS = [
-  ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["q", "close Stage"]]],
+  ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["Tab ⇧Tab", "next / previous machine tab"], ["] [", "the same"], ["q", "close Stage (docked: Esc)"]]],
   ["FIND A SPACE", [["/", "filter by name, machine, folder, branch, agents"], ["⌃n ⌃p", "next / previous match (or arrows)"], ["Enter", "go there"], ["⌃u", "clear the filter"], ["Esc", "back to the list"]]],
   ["NEW SPACE", [["n", "new space: machine, then folder, then what to start"], ["Enter", "next step; on the last, open the space"], ["Tab →", "show a folder's subfolders"], ["~/x /x", "type a path to use it (made if missing)"], ["Esc", "back a step"]]],
   ["ANYWHERE", [["⌘G", "open Stage beside you, or focus it (keys.json)"], ["?", "these keys"]]],
 ];
 // Heel's overview type: name 16/600, status 12, mono meta 10, bubble title 13.5/600, message 12.5.
+// Nesting: a family (a space and the spaces under it) shares one tinted panel with no dividers inside, and a
+// mint rail runs from the parent's status chip down to an elbow at each child. NEST picks what's drawn.
+const NEST = "both"; // "rail" | "panel" | "both"
+const NEST_IND = 28, NEST_RAIL = 3;
 const T = { meta: 10, msg: 13, title: 13.5, status: 12, name: 16, field: 14 };
 // Motion is costly: every Herdr redraw repaints the whole window, so anything that animates sets the window's
 // frame rate. A .loop() runs at ~30 fps and held Herdr at ~25% CPU (measured 2026-11-09, ~3% without it).
@@ -68,6 +73,8 @@ export default class Stage extends View {
     this.byId = {};
     this.entries = []; // [{ id, depth, parent, kids }] in display order, from the last refresh
     this.store = shared("stage.presence") ?? {};
+    // Which machine's spaces to show ("*" all, "" this computer, or a machine name); kept across restarts.
+    this.tab = shared("stage.machine") ?? ALL;
     this.lane = 0;
     this.width = 0; // unknown until the pane reports its size
     // Herdr reports a size only for a new element or a changed size, so after a hot reload into a pane
@@ -108,6 +115,8 @@ export default class Stage extends View {
       try {
         const seam = JSON.parse((await readTextFile(`${appHome()}/stage-test.json`)) ?? "null");
         if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
+        // {"machine": "ska"}: start on that machine's tab ("" this computer, "*" all).
+        if (typeof seam?.machine === "string") { this.setTab(seam.machine); cx.notify(); }
         // {"help": true | "filter words"}: the ? key list, optionally filtered.
         if (seam?.help) { this.keysHelp.open(cx); if (typeof seam.help === "string") this.keysHelp.st = { q: seam.help, typing: false, y: 0 }; }
         // {"open": {"step": "folder", "machine": "ska", "query": ""}}: the new-space picker at a step.
@@ -138,6 +147,32 @@ export default class Stage extends View {
       cx.notify();
       if (this.again) { this.again = false; this.refresh(cx); }
     });
+  }
+
+  setTab(tab) {
+    if (tab === this.tab) return;
+    this.tab = tab;
+    setShared("stage.machine", tab);
+    this.sel = 0; this.selId = null; this.scroll.scroll_to_item(0);
+  }
+
+  // The machine tabs over the list: All, This Mac, then each machine in its pill colour, with how many of its
+  // spaces need you. Hidden when every space is on one machine.
+  tabBar(tabs) {
+    if (!tabs.length) return null;
+    const needs = (t) => spaces().filter((sp) => (t === ALL || (sp.machine ?? HERE) === t)
+      && (sp.status === "blocked" || this.byId[sp.id]?.counts.move)).length;
+    return h_flex().flex_none().px(SIDE - 4).pt(10).pb(6).gap(6).items_center().overflow_hidden().border_b(1).border_color(K.ruleSoft)
+      .font_family(this.font).text_size(T.status)
+      .children(tabs.map((t) => {
+        const on = t === this.tab, col = t === ALL || t === HERE ? K.ink : machineColor(t), n = needs(t);
+        return h_flex().id(`stage-tab-${t || "here"}`).flex_none().h(24).px(9).gap(6).items_center().rounded(12).cursor_pointer()
+          .bg(on ? col + "2E" : "#00000000").border(1).border_color(on ? col + "99" : "#00000000")
+          .text_color(on ? col : K.ink3).font_weight(on ? 600 : 400)
+          .child(t === ALL ? "All" : t === HERE ? "This Mac" : t)
+          .when(n > 0, (el) => el.child(div().px(5).h(15).rounded(8).bg(this.need + "33").text_color(this.need).text_size(T.meta).child(String(n))))
+          .on_click((_e, cx) => { this.setTab(t); this.handle.focus(); this.watchFocus(cx); cx.notify(); });
+      }));
   }
 
   go(sp, cx) {
@@ -297,9 +332,9 @@ export default class Stage extends View {
   // One space as a row: header line, meta line, bubbles. No card: rows sit on the ground, split by a hairline.
   // `on`: the keyboard selection, shown only while this pane has the keyboard, as a steady tint behind the row
   // (not a pulse: see TICK).
-  row(e, on, tier, w) {
+  row(e, on, tier, w, mk = null) {
     const live = e.space, c = this.byId[live.id], v = rowView(c, tier, w);
-    const indent = e.depth ? Math.min(3, e.depth) * 16 : 0, bw = slotW(tier, w, indent);
+    const indent = e.depth ? Math.min(3, e.depth) * NEST_IND : 0, bw = slotW(tier, w, indent);
     const head = h_flex().gap(8).items_center().min_w(0)
       .child(this.title(live.name, e.hits))
       .when(Boolean(live.machine), (el) => el.child(this.machine(live.machine)))
@@ -308,14 +343,44 @@ export default class Stage extends View {
 
       .child(div().flex_1());
     const body = v_flex().h(rowHeight(c, tier)).w_full().pl(SIDE + indent).pr(SIDE).justify_center().relative()
+      .when(Boolean(mk?.fam) && NEST !== "rail", (el) => el.child(this.familyPanel(mk)))
       .when(on, (el) => el.child(div().absolute().inset_0().bg(K.sel)))
-      .when(Boolean(e.depth), (el) => el.child(div().absolute().left(SIDE + indent - 10).top(0).h(22).w(1).bg(K.rule))
-        .child(div().absolute().left(SIDE + indent - 10).top(22).w(6).h(1).bg(K.rule)))
+      .when(Boolean(mk?.fam) && NEST !== "panel", (el) => el.children(this.familyRails(mk, e, indent, tier)))
       .child(head);
     if (tier === "xs") return body;
-    return body.child(div().mt(4).child(this.metaLine(e, c, live, v.more)))
+    // In a family the rail already says who the parent is, so the "under …" chip goes.
+    return body.child(div().mt(4).child(this.metaLine(mk?.fam ? { ...e, parent: null } : e, c, live, v.more)))
       .when(v.bubbles.length > 0, (el) => el.child(h_flex().mt(ROW.gap).gap(BUBBLE_GAP).min_w(0).overflow_hidden()
         .children(v.bubbles.map((i) => this.bubble(i, bw)))));
+  }
+
+  // The family's shared panel behind this row: rounded at the family's top and bottom, and running over the
+  // 1px divider slot below (dividers are left out inside a family) so the panel reads as one piece.
+  familyPanel(mk) {
+    let p = div().absolute().left(6).right(6).top(mk.first ? 4 : 0).bottom(mk.last ? 3 : -1).bg(K.accent + "14")
+      .border_l(1).border_r(1).border_color(K.accent + "38");
+    if (mk.first) p = p.rounded_t(14).border_t(1);
+    if (mk.last) p = p.rounded_b(14).border_b(1);
+    return p;
+  }
+
+  // The rail: a line per level that carries on through this row, and this row's own elbow from its parent's
+  // line into its name, ending in a dot. Lines sit under the status chips (each level is NEST_IND across).
+  familyRails(mk, e, indent, tier) {
+    const col = K.accent + "D0", x = (L) => SIDE + L * NEST_IND + 11;
+    const nameY = ROW.padY + ROW.head / 2, chipBottom = tier === "xs" ? ROW.padY + ROW.head : ROW.padY + ROW.head + 4 + ROW.meta;
+    const own = e.parent ? e.depth : 0, out = [];
+    for (const L of mk.rails) {
+      // Its own level: the line starts under its status chip; an ancestor's: it passes straight through.
+      out.push(div().absolute().left(x(L)).w(NEST_RAIL).top(L === own ? chipBottom + 3 : 0).bottom(-1).bg(col));
+    }
+    if (mk.elbow >= 0) {
+      const ex = x(mk.elbow), end = SIDE + indent - 8;
+      out.push(div().absolute().left(ex).w(NEST_RAIL).top(0).h(nameY + 1).bg(col));
+      out.push(div().absolute().left(ex).top(nameY - 1).h(NEST_RAIL).w(Math.max(0, end - ex)).bg(col));
+      out.push(div().absolute().left(end - 3).top(nameY - 4).w(9).h(9).rounded(5).bg(K.accent));
+    }
+    return out;
   }
 
   key(e, list, rows, cx) {
@@ -326,6 +391,9 @@ export default class Stage extends View {
     if (e.key === "n" && !e.modifiers?.platform && !e.modifiers?.control) { this.startOpen(cx); cx.stop_propagation(); return cx.notify(); }
     if (e.key === "/") { this.find = { query: "", sel: 0 }; this.scroll.scroll_to_item(0); cx.stop_propagation(); return cx.notify(); }
     if (e.modifiers?.platform || e.modifiers?.control) return; // cmd-h/l etc. stay the app's
+    // Machine tabs: Tab / shift-Tab, or ] / [ (in case something ahead of Stage keeps Tab for itself).
+    const tabStep = e.key === "]" ? 1 : e.key === "[" ? -1 : e.key === "tab" || e.key === "Tab" ? (e.modifiers?.shift ? -1 : 1) : 0;
+    if (tabStep) { this.setTab(nextTab(machineTabs(spaces()), this.tab, tabStep)); cx.stop_propagation(); return cx.notify(); }
     const before = this.sel;
     const r = nextGrid(this.sel, e.key, rows, Boolean(e.modifiers?.shift));
     this.sel = r.sel;
@@ -356,6 +424,7 @@ export default class Stage extends View {
   // New space picker (n, or the + by the field): machine, then folder, then what to start. The lists and
   // keys are core/open.js; here we read machines, scan folders on the chosen machine, and run space.new.
   startOpen(cx) {
+    this.openError = null;
     this.open = { step: "machine", query: "", sel: 0 };
     this.find = null;
     cx.spawn(async (cx) => {
@@ -407,12 +476,26 @@ export default class Stage extends View {
   }
 
   // A typed folder that isn't there yet is made first (space.new refuses a folder that doesn't exist).
+  // A "~" path is expanded on the machine itself: the picker only knows that machine's home once its
+  // folder scan is done (seconds on a remote), and a path typed before then would stay "~", make a folder
+  // literally called "~", and fail in space.new with "cannot start a terminal".
+  // run() reports nothing back, so a space that hasn't appeared after a few seconds is reported as failed.
   createSpace(args, typed, cx) {
     this.open = null;
+    this.openError = null;
+    const on = { on: args.machine || null }, before = new Set(spaces().map((sp) => sp.id));
     cx.spawn(async (cx) => {
-      if (typed) { try { await exec("mkdir", ["-p", args.folder], { on: args.machine || null }); } catch {} }
+      if (args.folder === "~" || String(args.folder).startsWith("~/")) {
+        try { const h = (await exec("sh", ["-c", 'printf "%s" "$HOME"'], on)).stdout; if (h.startsWith("/")) args = { ...args, folder: h + args.folder.slice(1) }; } catch {}
+      }
+      if (typed) { try { await exec("mkdir", ["-p", args.folder], on); } catch {} }
       run("space.new", args);
       cx.notify();
+      cx.timer.after(5000, (cx) => {
+        if (spaces().some((sp) => !before.has(sp.id))) return;
+        this.openError = `couldn't open a space in ${args.folder}${args.machine ? ` on ${args.machine}` : ""}`;
+        cx.notify();
+      });
     });
   }
 
@@ -500,7 +583,10 @@ export default class Stage extends View {
     this.presence(false);
     const w = this.width || 640, tier = tierFor(w);
     // The space you're in is pinned at the top (not while searching), so the list leaves it out.
-    const all = this.find ? this.found() : this.shown();
+    // Searching jumps anywhere, so it looks across every machine; otherwise the list is the tab's.
+    const tabs = machineTabs(spaces());
+    if (this.tab !== ALL && !tabs.includes(this.tab)) this.tab = ALL; // its machine went away
+    const all = this.find ? this.found() : onlyTab(this.shown(), this.tab);
     const pinned = this.find || this.open ? null : all.find((e) => e.space.active);
     const list = pinned ? all.filter((e) => e !== pinned) : all;
     if (this.find) this.find.sel = Math.max(0, Math.min(this.find.sel, list.length - 1));
@@ -511,6 +597,7 @@ export default class Stage extends View {
     // Reading panes() here also redraws the pane when focus moves elsewhere (it is live data).
     const active = this.handle.is_focused() && (this.dock || panes().find((p) => p.focused)?.mod === MOD);
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
+    const marks = this.find ? list.map(() => ({ fam: null, rails: [], elbow: -1 })) : familyMarks(list); // search is flat
     // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
     this.font = String(settings().font || settings().font_family || K.mono);
     // The same ground as your terminals: the theme's terminal background at the layout's terminal_opacity,
@@ -531,7 +618,8 @@ export default class Stage extends View {
     const vlist = v_virtual_list("stage-rows", list.length, heights, (i) => list[i].id, (range) => {
       const out = [];
       for (let i = range.start; i < range.end; i++)
-        out.push(v_flex().h(heights[i]).child(this.row(list[i], active && i === this.sel, tier, w)).child(div().h(1).mx(SIDE).bg(K.ruleSoft)));
+        out.push(v_flex().h(heights[i]).child(this.row(list[i], active && i === this.sel, tier, w, marks[i]))
+          .child(div().h(1).mx(SIDE).when(!(marks[i].fam && !marks[i].last), (el) => el.bg(K.ruleSoft))));
       return out;
     }).track_scroll(this.scroll).size_full()
       .on_item_click((id, cx) => {
@@ -545,8 +633,8 @@ export default class Stage extends View {
     // The bottom, as in Heel: a status line, then one rounded field to jump to a space (/ focuses it).
     const working = Object.values(this.byId).reduce((n, c) => n + (c.counts.working || 0), 0);
     const status = h_flex().px(SIDE + 6).pb(7).gap(10).font_family(this.font).text_size(T.meta).text_color(K.ink3)
-      .child(div().flex_none().text_color(this.error ? this.need : K.accent).child("●"))
-      .child(div().flex_1().min_w(0).truncate().child(this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
+      .child(div().flex_none().text_color(this.error || this.openError ? this.need : K.accent).child("●"))
+      .child(div().flex_1().min_w(0).truncate().child(this.openError ? this.openError : this.error ? `couldn't read agents: ${this.error}` : !this.loaded ? "reading agents…"
         : [`${spaces().length} spaces`, this.lane && `${this.lane} needs you`, working && `${working} working`].filter(Boolean).join(" · ")))
       .when(tier !== "xs", (el) => el.child(div().flex_none().child(this.open ? (this.open.step === "folder" ? "↵ next · tab/→ inside · esc back" : "↵ next · esc back")
         : this.find ? "⌃n ⌃p · ↵ go · esc" : "j k · ↵ go · n new · ? keys")));
@@ -567,6 +655,7 @@ export default class Stage extends View {
         .on_click((_e, cx) => { this.startOpen(cx); this.handle.focus(); this.watchFocus(cx); cx.notify(); })));
     const bottom = v_flex().pt(8).border_t(1).border_color(K.rule).child(status).child(field);
     const help = this.keysHelp.panel({ bg: K.bg, surface: K.surface, border: K.rule, ink: K.ink, ink2: K.ink2, dim: K.ink3, accent: K.accent, warn: K.need, font: this.font, mono: this.font });
-    return root.when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom).when(Boolean(help), (el) => el.child(help));
+    const bar = this.find || this.open ? null : this.tabBar(tabs);
+    return root.when(Boolean(bar), (el) => el.child(bar)).when(Boolean(pin), (el) => el.child(pin)).child(body).child(bottom).when(Boolean(help), (el) => el.child(help));
   }
 }

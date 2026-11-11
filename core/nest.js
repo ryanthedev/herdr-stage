@@ -67,3 +67,32 @@ export function families(rankedIds, parent) {
   for (const r of roots) walk(r, 0);
   return out;
 }
+
+// How each row of the display list sits in its family, for drawing: { fam, first, last, rails, elbow }.
+// fam: the family's root id, or null for a space with no nesting (no parent shown, no kids shown).
+// first / last: the family's top row and bottom row (a panel rounds those corners; no divider inside).
+// elbow: the level (depth - 1) whose rail turns into this row, or -1 for the root.
+// rails: the levels whose rail runs the full height of this row, because a later row of the family still
+// hangs off them. The root's own rail (level 0 below its header) is in rails when it has kids.
+export function familyMarks(list) {
+  const ids = new Set(list.map((e) => e.id)), byId = new Map(list.map((e) => [e.id, e]));
+  const rootOf = (e) => { let r = e; while (r.parent && ids.has(r.parent)) r = byId.get(r.parent); return r.id; };
+  const roots = list.map(rootOf);
+  const hasKids = new Set(list.filter((e) => e.parent && ids.has(e.parent)).map((e) => roots[list.indexOf(e)]));
+  return list.map((e, i) => {
+    const fam = hasKids.has(roots[i]) ? roots[i] : null;
+    if (!fam) return { fam: null, first: false, last: false, rails: [], elbow: -1 };
+    const d = e.parent && ids.has(e.parent) ? e.depth : 0;
+    const rails = [];
+    // Level L carries on below row i when a later row of this family, before the family leaves level L,
+    // sits at depth L + 1 (another child of the same ancestor).
+    for (let L = 0; L <= d; L++) {
+      for (let j = i + 1; j < list.length && roots[j] === fam; j++) {
+        const dj = list[j].depth;
+        if (dj <= L) break;
+        if (dj === L + 1) { rails.push(L); break; }
+      }
+    }
+    return { fam, first: roots[i - 1] !== fam, last: roots[i + 1] !== fam, rails, elbow: d ? d - 1 : -1 };
+  });
+}
