@@ -40,6 +40,9 @@ so the adapter reads small transcript tails, one at a time, only for agents that
 - Agent details for a remote space (title, last message) are read on that machine, like its git status.
 - The space you're in has its own section at the top (sky blue, "you're here"), on every machine tab and while
   searching; the list below leaves it out.
+- History (`core/history.js`, tested): every space switch is logged in shared state. `o` / `i` go back / forward,
+  `r` opens the Recent tab (each space once, newest first, with when and how often); from anywhere,
+  keys.json binds `stage.back` / `stage.forward` (here: cmd-ctrl-[ / cmd-ctrl-]).
 - `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
 
 ## Nesting a space under another

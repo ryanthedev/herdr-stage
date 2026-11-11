@@ -34,13 +34,18 @@ import { MISSION as K, machineColor } from "./themes.js";
 import { Help } from "./help/help.js";
 import { SCAN, LIST, parseScan, machineRows, folderRows, startRows, nextOpen } from "./core/open.js";
 import { ALL, HERE, machineTabs, nextTab, onlyTab } from "./core/machines.js";
+import { EMPTY as NO_HISTORY, visit, step, recent, ago as agoSince } from "./core/history.js";
+
+// The Recent tab: your space history (core/history.js), after the machine tabs. Not a machine name.
+const RECENT = "@recent";
 
 const MOD = "stage";
 
 // Stage's keys for the ? overlay (herdr-help, ~/repos/herdr-help). Keep in step with key(), findKey() and
 // core/open.js nextOpen().
 const KEYS = [
-  ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["Tab ⇧Tab", "next / previous machine tab"], ["] [", "the same"], ["q", "close Stage (docked: Esc)"]]],
+  ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["Tab ⇧Tab", "next / previous tab (machines, then Recent)"], ["] [", "the same"], ["q", "close Stage (docked: Esc)"]]],
+  ["HISTORY", [["o", "back to the space you were in before"], ["i", "forward again"], ["r", "Recent: every space you've been in, newest first"], ["⌘⌃[ ⌘⌃]", "back / forward from anywhere (keys.json)"]]],
   ["FIND A SPACE", [["/", "filter by name, machine, folder, branch, agents"], ["⌃n ⌃p", "next / previous match (or arrows)"], ["Enter", "go there"], ["⌃u", "clear the filter"], ["Esc", "back to the list"]]],
   ["NEW SPACE", [["n", "new space: machine, then folder, then what to start"], ["Enter", "next step; on the last, open the space"], ["Tab →", "show a folder's subfolders"], ["~/x /x", "type a path to use it (made if missing)"], ["Esc", "back a step"]]],
   ["ANYWHERE", [["⌘G", "open Stage beside you, or focus it (keys.json)"], ["?", "these keys"]]],
@@ -114,6 +119,7 @@ export default class Stage extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
+        if (c === "back" || c === "forward") { this.hop(c === "back" ? -1 : 1, cx, true); continue; }
         if (c !== "focus") continue;
         // A dock is not a pane, so panes() can't say it's the target; "focus" reaching it is the signal.
         cx.timer.after(60, () => { if (this.dock || panes().find((p) => p.focused)?.mod === MOD) this.handle.focus(); this.watchFocus(cx); cx.notify(); });
@@ -129,6 +135,8 @@ export default class Stage extends View {
         if (typeof seam?.find === "string") { this.find = { query: seam.find, sel: 0 }; cx.notify(); }
         // {"machine": "ska"}: start on that machine's tab ("" this computer, "*" all).
         if (typeof seam?.machine === "string") { this.setTab(seam.machine); cx.notify(); }
+        // {"hop": -1 | 1}: back or forward through the space history, as o / i would.
+        if (seam?.hop === -1 || seam?.hop === 1) this.hop(seam.hop, cx);
         // {"help": true | "filter words"}: the ? key list, optionally filtered.
         if (seam?.help) { this.keysHelp.open(cx); if (typeof seam.help === "string") this.keysHelp.st = { q: seam.help, typing: false, y: 0 }; }
         // {"open": {"step": "folder", "machine": "ska", "query": ""}}: the new-space picker at a step.
@@ -161,6 +169,12 @@ export default class Stage extends View {
     });
   }
 
+  // The tabs: All and the machines (just All when every space is on one machine), then Recent.
+  tabs() {
+    const m = machineTabs(spaces());
+    return [...(m.length ? m : [ALL]), RECENT];
+  }
+
   setTab(tab) {
     if (tab === this.tab) return;
     this.tab = tab;
@@ -172,19 +186,44 @@ export default class Stage extends View {
   // spaces need you. Hidden when every space is on one machine.
   tabBar(tabs) {
     if (!tabs.length) return null;
-    const needs = (t) => spaces().filter((sp) => (t === ALL || (sp.machine ?? HERE) === t)
+    const needs = (t) => t === RECENT ? 0 : spaces().filter((sp) => (t === ALL || (sp.machine ?? HERE) === t)
       && (sp.status === "blocked" || this.byId[sp.id]?.counts.move)).length;
     return h_flex().flex_none().px(SIDE - 4).pt(10).pb(6).gap(6).items_center().overflow_hidden().border_b(1).border_color(K.ruleSoft)
       .font_family(this.font).text_size(T.status)
       .children(tabs.map((t) => {
-        const on = t === this.tab, col = t === ALL || t === HERE ? K.ink : machineColor(t), n = needs(t);
-        return h_flex().id(`stage-tab-${t || "here"}`).flex_none().h(24).px(9).gap(6).items_center().rounded(12).cursor_pointer()
+        const on = t === this.tab, col = t === ALL || t === HERE ? K.ink : t === RECENT ? K.here : machineColor(t), n = needs(t);
+        return h_flex().id(`stage-tab-${t === RECENT ? "recent" : t || "here"}`).flex_none().h(24).px(9).gap(6).items_center().rounded(12).cursor_pointer()
           .bg(on ? col + "2E" : "#00000000").border(1).border_color(on ? col + "99" : "#00000000")
           .text_color(on ? col : K.ink3).font_weight(on ? 600 : 400)
-          .child(t === ALL ? "All" : t === HERE ? "This Mac" : t)
+          .when(t === RECENT, (el) => el.child("\uf1da"))
+          .child(t === ALL ? "All" : t === HERE ? "This Mac" : t === RECENT ? "Recent" : t)
           .when(n > 0, (el) => el.child(div().px(5).h(15).rounded(8).bg(this.need + "33").text_color(this.need).text_size(T.meta).child(String(n))))
           .on_click((_e, cx) => { this.setTab(t); this.handle.focus(); this.watchFocus(cx); cx.notify(); });
       }));
+  }
+
+  // Back (-1) or forward (1) through your space history. From keys.json every copy of Stage (the dock and
+  // any pane) gets the command, so the first one to act claims it for a moment and the rest stand down.
+  hop(dir, cx, fromKey = false) {
+    const now = Date.now();
+    if (fromKey) {
+      if (now - (shared("stage.hop") ?? 0) < 300) return;
+      setShared("stage.hop", now);
+    }
+    this.presence(false);
+    const ids = new Set(spaces().map((s) => s.id));
+    const r = step(shared("stage.history") ?? NO_HISTORY, dir, (id) => ids.has(id));
+    if (!r.target) return;
+    setShared("stage.history", r.h);
+    this.go(spaces().find((s) => s.id === r.target), cx);
+    cx.notify();
+  }
+
+  // The Recent tab's rows: each space you've been in once, newest visit first, with when and how often.
+  recentRows() {
+    const byId = Object.fromEntries(this.shown().map((e) => [e.id, e])), now = Date.now();
+    return recent(shared("stage.history"), (id) => Boolean(byId[id]))
+      .map((r) => ({ ...byId[r.id], depth: 0, parent: null, kids: 0, ago: agoSince(r.at, now), visits: r.visits }));
   }
 
   go(sp, cx) {
@@ -223,6 +262,9 @@ export default class Stage extends View {
   // Note where you are now (called on refresh and whenever the shown space changes); saved on refresh.
   presence(save) {
     const sp = spaces(), active = sp.find((s) => s.active)?.id ?? null;
+    // Every copy of Stage writes the same shared history; a copy that sees no switch writes nothing.
+    const hist = shared("stage.history") ?? NO_HISTORY, next = visit(hist, active, Date.now());
+    if (next !== hist) setShared("stage.history", next);
     if (!save && active === this.store._active) return;
     this.store = track(this.store, active, Date.now());
     if (save) { this.store = prune(this.store, sp.map((s) => s.id)); setShared("stage.presence", this.store); }
@@ -280,6 +322,8 @@ export default class Stage extends View {
     // Everything else on the line is a chip too, each with its icon: nested-under, the space's other panes,
     // its nested spaces, and how many items didn't fit as bubbles.
     const counts = [
+      // On the Recent tab: when you were last there, and how many times you've switched to it.
+      e.ago && ["\uf1da", `${e.ago === "now" ? "just now" : `${e.ago} ago`}${e.visits > 1 ? ` · ${e.visits}×` : ""}`],
       parentName && ["\uf148", `under ${parentName}`],
       n(c?.counts.idle, "idle", "idle") && ["\uf186", n(c?.counts.idle, "idle", "idle")],
       n(c?.counts.mods, "dashboard", "dashboards") && ["\uf0e4", n(c?.counts.mods, "dashboard", "dashboards")],
@@ -417,7 +461,10 @@ export default class Stage extends View {
     if (e.modifiers?.platform || e.modifiers?.control) return; // cmd-h/l etc. stay the app's
     // Machine tabs: Tab / shift-Tab, or ] / [ (in case something ahead of Stage keeps Tab for itself).
     const tabStep = e.key === "]" ? 1 : e.key === "[" ? -1 : e.key === "tab" || e.key === "Tab" ? (e.modifiers?.shift ? -1 : 1) : 0;
-    if (tabStep) { this.setTab(nextTab(machineTabs(spaces()), this.tab, tabStep)); cx.stop_propagation(); return cx.notify(); }
+    if (tabStep) { this.setTab(nextTab(this.tabs(), this.tab, tabStep)); cx.stop_propagation(); return cx.notify(); }
+    // History: o back, i forward (vim's ctrl-o / ctrl-i), r the Recent tab (again: back to All).
+    if (e.key === "o" || e.key === "i") { this.hop(e.key === "o" ? -1 : 1, cx); cx.stop_propagation(); return cx.notify(); }
+    if (e.key === "r") { this.setTab(this.tab === RECENT ? ALL : RECENT); cx.stop_propagation(); return cx.notify(); }
     const before = this.sel;
     const r = nextGrid(this.sel, e.key, rows, Boolean(e.modifiers?.shift));
     this.sel = r.sel;
@@ -609,9 +656,9 @@ export default class Stage extends View {
     // The space you're in gets its own section at the top whatever the machine tab or search (not while
     // picking a new space), so the list leaves it out.
     // Searching jumps anywhere, so it looks across every machine; otherwise the list is the tab's.
-    const tabs = machineTabs(spaces());
+    const tabs = this.tabs();
     if (this.tab !== ALL && !tabs.includes(this.tab)) this.tab = ALL; // its machine went away
-    const all = this.find ? this.found() : onlyTab(this.shown(), this.tab);
+    const all = this.find ? this.found() : this.tab === RECENT ? this.recentRows() : onlyTab(this.shown(), this.tab);
     const pinned = this.open ? null : this.shown().find((e) => e.space.active) ?? null;
     const list = reroot(pinned ? all.filter((e) => e.id !== pinned.id) : all);
     if (this.find) this.find.sel = Math.max(0, Math.min(this.find.sel, list.length - 1));
@@ -622,7 +669,7 @@ export default class Stage extends View {
     // Reading panes() here also redraws the pane when focus moves elsewhere (it is live data).
     const active = this.handle.is_focused() && (this.dock || panes().find((p) => p.focused)?.mod === MOD);
     const heights = list.map((e) => rowHeight(this.byId[e.id], tier) + 1); // + the hairline between rows
-    const marks = this.find ? list.map(() => ({ fam: null, rails: [], elbow: -1 })) : familyMarks(list); // search is flat
+    const marks = this.find || this.tab === RECENT ? list.map(() => ({ fam: null, rails: [], elbow: -1 })) : familyMarks(list); // search is flat
     // Your Herdr font (settings "font", e.g. BerkeleyMono Nerd Font) for everything, like the terminals.
     this.font = String(settings().font || settings().font_family || K.mono);
     // The same ground as your terminals: the theme's terminal background at the layout's terminal_opacity,
