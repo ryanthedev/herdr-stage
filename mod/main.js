@@ -13,7 +13,8 @@
 //
 // Layout (core/rows.js): the pane's width picks a tier; each tier drops detail (screen previews, then
 // thumbnails, then paths and quiet items) so the most important things survive a narrow pane. The space
-// you're in is pinned under the header and left out of the scrolling list.
+// you're in has its own section under the header, whatever the machine tab or search, and is left out of
+// the scrolling list.
 //
 // The list is a virtual list, because that is the one scroll area code can scroll (to keep the selection
 // on screen). Its renderer may hold no handlers and must state row heights, so heights come from
@@ -49,6 +50,17 @@ const KEYS = [
 // mint rail runs from the parent's status chip down to an elbow at each child. NEST picks what's drawn.
 const NEST = "both"; // "rail" | "panel" | "both"
 const NEST_IND = 28, NEST_RAIL = 3;
+// Depths again after rows were taken out (the pinned space, another tab's): a row whose parent isn't listed
+// starts at the top level, and its own children follow it up. The list keeps parents before their children.
+function reroot(list) {
+  const depth = new Map();
+  return list.map((e) => {
+    const d = e.parent && depth.has(e.parent) ? depth.get(e.parent) + 1 : 0;
+    depth.set(e.id, d);
+    return d === e.depth && (d || !e.parent) ? e : { ...e, depth: d, parent: d ? e.parent : null };
+  });
+}
+
 const T = { meta: 10, msg: 13, title: 13.5, status: 12, name: 16, field: 14 };
 // Motion is costly: every Herdr redraw repaints the whole window, so anything that animates sets the window's
 // frame rate. A .loop() runs at ~30 fps and held Herdr at ~25% CPU (measured 2026-11-09, ~3% without it).
@@ -318,25 +330,25 @@ export default class Stage extends View {
   }
 
   // The name, with the characters a search matched drawn in the accent.
-  title(name, hits) {
-    if (!hits?.length) return div().min_w(0).truncate().text_size(T.name).font_weight(600).text_color(K.ink).child(name);
+  title(name, hits, ink = K.ink) {
+    if (!hits?.length) return div().min_w(0).truncate().text_size(T.name).font_weight(600).text_color(ink).child(name);
     const on = new Set(hits), segs = [];
     for (let i = 0; i < name.length; i++) {
       const m = on.has(i), last = segs[segs.length - 1];
       if (last && last.m === m) last.t += name[i]; else segs.push({ m, t: name[i] });
     }
     return h_flex().min_w(0).overflow_hidden().text_size(T.name).font_weight(600)
-      .children(segs.map((g) => div().flex_none().text_color(g.m ? K.accent : K.ink).child(g.t)));
+      .children(segs.map((g) => div().flex_none().text_color(g.m ? K.accent : ink).child(g.t)));
   }
 
   // One space as a row: header line, meta line, bubbles. No card: rows sit on the ground, split by a hairline.
   // `on`: the keyboard selection, shown only while this pane has the keyboard, as a steady tint behind the row
   // (not a pulse: see TICK).
-  row(e, on, tier, w, mk = null) {
+  row(e, on, tier, w, mk = null, here = false) {
     const live = e.space, c = this.byId[live.id], v = rowView(c, tier, w);
     const indent = e.depth ? Math.min(3, e.depth) * NEST_IND : 0, bw = slotW(tier, w, indent);
     const head = h_flex().gap(8).items_center().min_w(0)
-      .child(this.title(live.name, e.hits))
+      .child(this.title(live.name, e.hits, here ? K.here : K.ink))
       .when(Boolean(live.machine), (el) => el.child(this.machine(live.machine)))
       // Too narrow for the chip line (xs): the status icon sits after the name instead.
       .when(tier === "xs", (el) => el.child(this.status(c, live)))
@@ -352,6 +364,18 @@ export default class Stage extends View {
     return body.child(div().mt(4).child(this.metaLine(mk?.fam ? { ...e, parent: null } : e, c, live, v.more)))
       .when(v.bubbles.length > 0, (el) => el.child(h_flex().mt(ROW.gap).gap(BUBBLE_GAP).min_w(0).overflow_hidden()
         .children(v.bubbles.map((i) => this.bubble(i, bw)))));
+  }
+
+  // The space you're in: a sky-blue card over the list with a bar down its left edge and a "you're here"
+  // label, its name in the same blue. Shown on every tab and while searching.
+  hereSection(e, tier, w) {
+    const inset = 8;
+    return v_flex().flex_none().relative().mx(inset).mt(8).mb(6).rounded(14).overflow_hidden()
+      .bg(K.here + "17").border(1).border_color(K.here + "59")
+      .child(div().absolute().left(0).top(0).bottom(0).w(3).bg(K.here))
+      .child(h_flex().px(SIDE).pt(9).gap(6).items_center().font_family(this.font).text_size(T.meta).font_weight(700)
+        .text_color(K.here).child("\uf041").child("YOU'RE HERE"))
+      .child(this.row({ ...e, depth: 0, parent: null }, false, tier, w - inset * 2, null, true));
   }
 
   // The family's shared panel behind this row: rounded at the family's top and bottom, and running over the
@@ -582,13 +606,14 @@ export default class Stage extends View {
   render(cx) {
     this.presence(false);
     const w = this.width || 640, tier = tierFor(w);
-    // The space you're in is pinned at the top (not while searching), so the list leaves it out.
+    // The space you're in gets its own section at the top whatever the machine tab or search (not while
+    // picking a new space), so the list leaves it out.
     // Searching jumps anywhere, so it looks across every machine; otherwise the list is the tab's.
     const tabs = machineTabs(spaces());
     if (this.tab !== ALL && !tabs.includes(this.tab)) this.tab = ALL; // its machine went away
     const all = this.find ? this.found() : onlyTab(this.shown(), this.tab);
-    const pinned = this.find || this.open ? null : all.find((e) => e.space.active);
-    const list = pinned ? all.filter((e) => e !== pinned) : all;
+    const pinned = this.open ? null : this.shown().find((e) => e.space.active) ?? null;
+    const list = reroot(pinned ? all.filter((e) => e.id !== pinned.id) : all);
     if (this.find) this.find.sel = Math.max(0, Math.min(this.find.sel, list.length - 1));
     const at = this.selId ? list.findIndex((e) => e.id === this.selId) : -1;
     this.sel = this.find ? this.find.sel : at >= 0 ? at : Math.max(0, Math.min(this.sel, list.length - 1));
@@ -614,7 +639,7 @@ export default class Stage extends View {
         if (Math.abs(nw - this.width) > 2) { this.width = nw; cx.notify(); }
       })
       .on_key_down((e, cx) => this.key(e, list, rows, cx));
-    const pin = pinned && div().pt(6).border_b(1).border_color(K.rule).child(this.row({ ...pinned, depth: 0 }, false, tier, w));
+    const pin = pinned && this.hereSection(pinned, tier, w);
     const vlist = v_virtual_list("stage-rows", list.length, heights, (i) => list[i].id, (range) => {
       const out = [];
       for (let i = range.start; i < range.end; i++)

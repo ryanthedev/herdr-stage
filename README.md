@@ -38,6 +38,8 @@ so the adapter reads small transcript tails, one at a time, only for agents that
   need you, the choice is remembered, and `/` still searches every machine. Hidden when every space is on
   one machine. `core/machines.js` (tested).
 - Agent details for a remote space (title, last message) are read on that machine, like its git status.
+- The space you're in has its own section at the top (sky blue, "you're here"), on every machine tab and while
+  searching; the list below leaves it out.
 - `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
 
 ## Nesting a space under another

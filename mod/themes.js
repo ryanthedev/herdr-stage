@@ -13,6 +13,8 @@ export const MISSION = {
   ink: "#ECF0EB", ink2: "#94A198", ink3: "#79867C",
   // Bubble titles: a clear sky blue, apart from the white message text (no warm tones).
   title: "#7FB5FF",
+  // The space you're in: its own pinned section in the same sky blue, apart from mint (families) and pink.
+  here: "#7FB5FF",
   accent: "#B0EFB5", onAccent: "#15261A",
   // Needs-you: neon pink, like the city's signs. Not teal (the user found the teal edges ugly), not amber/peach.
   need: "#FF6FA3",
