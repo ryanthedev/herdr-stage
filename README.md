@@ -42,7 +42,7 @@ so the adapter reads small transcript tails, one at a time, only for agents that
   searching; the list below leaves it out.
 - History (`core/history.js`, tested): every space switch is logged in shared state. `o` / `i` go back / forward,
   `r` opens the Recent tab (each space once, newest first, with when and how often); from anywhere,
-  keys.json binds `stage.back` / `stage.forward` (here: cmd-ctrl-[ / cmd-ctrl-]).
+  keys.json binds `stage.back` / `stage.forward` (here: cmd-shift-[ / ] and cmd-ctrl-[ / ]).
 - `?` key list: copied in from [herdr-help](https://github.com/ryanthedev/herdr-help) (`~/repos/herdr-help`) by its `sync.sh` into `mod/help/`.
 
 ## Nesting a space under another

@@ -45,7 +45,7 @@ const MOD = "stage";
 // core/open.js nextOpen().
 const KEYS = [
   ["MOVE", [["j k", "next / previous space"], ["↓ ↑", "the same"], ["g G", "first / last space"], ["Enter", "go to that space"], ["Tab ⇧Tab", "next / previous tab (machines, then Recent)"], ["] [", "the same"], ["q", "close Stage (docked: Esc)"]]],
-  ["HISTORY", [["o", "back to the space you were in before"], ["i", "forward again"], ["r", "Recent: every space you've been in, newest first"], ["⌘⌃[ ⌘⌃]", "back / forward from anywhere (keys.json)"]]],
+  ["HISTORY", [["o", "back to the space you were in before"], ["i", "forward again"], ["r", "Recent: every space you've been in, newest first"], ["⌘⇧{ ⌘⇧}", "back / forward from anywhere (keys.json; also ⌘⌃[ ⌘⌃])"]]],
   ["FIND A SPACE", [["/", "filter by name, machine, folder, branch, agents"], ["⌃n ⌃p", "next / previous match (or arrows)"], ["Enter", "go there"], ["⌃u", "clear the filter"], ["Esc", "back to the list"]]],
   ["NEW SPACE", [["n", "new space: machine, then folder, then what to start"], ["Enter", "next step; on the last, open the space"], ["Tab →", "show a folder's subfolders"], ["~/x /x", "type a path to use it (made if missing)"], ["Esc", "back a step"]]],
   ["ANYWHERE", [["⌘G", "open Stage beside you, or focus it (keys.json)"], ["?", "these keys"]]],
